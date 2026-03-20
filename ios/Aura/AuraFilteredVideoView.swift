@@ -270,6 +270,8 @@ final class AuraFilteredVideoView: UIView {
       return applyVintageFilter(to: image, intensity: intensity, time: time)
     case "sketch":
       return applySketchFilter(to: image, intensity: intensity)
+    case "noir":
+      return applyNoirFilter(to: image, intensity: intensity)
     default:
       return applyColorMatrixFilter(to: image, matrix: matrix, intensity: intensity)
     }
@@ -543,6 +545,69 @@ final class AuraFilteredVideoView: UIView {
     .cropped(to: image.extent)
 
     return blendFilteredImage(image, with: vintageImage, intensity: clampedIntensity)
+  }
+
+  private func applyNoirFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+
+    // CIPhotoEffectNoir: Apple's built-in high-contrast B&W with rich tonal depth
+    let noirBase = image
+      .applyingFilter("CIPhotoEffectNoir")
+      .applyingFilter(
+        "CIHighlightShadowAdjust",
+        parameters: [
+          "inputShadowAmount": 0.6 + clampedIntensity * 0.3,
+          "inputHighlightAmount": 0.8 - clampedIntensity * 0.15,
+        ]
+      )
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputContrastKey: 1.1 + clampedIntensity * 0.25,
+          kCIInputBrightnessKey: -0.03 * clampedIntensity,
+          kCIInputSaturationKey: 0,
+        ]
+      )
+
+    // Vignette for dramatic framing
+    let vignetted = noirBase.applyingFilter(
+      "CIVignette",
+      parameters: [
+        kCIInputIntensityKey: 0.5 + clampedIntensity * 0.4,
+        kCIInputRadiusKey: 1.2 + clampedIntensity * 0.5,
+      ]
+    ).cropped(to: image.extent)
+
+    // Subtle grain for film texture
+    let randomNoise = CIFilter(name: "CIRandomGenerator")?.outputImage ?? image
+    let grain = randomNoise
+      .cropped(to: image.extent)
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0,
+          kCIInputBrightnessKey: -0.1,
+          kCIInputContrastKey: 2.0,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 0.08, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 0.08, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 0.08, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.07 + clampedIntensity * 0.05),
+          "inputBiasVector": CIVector(x: 0.46, y: 0.46, z: 0.46, w: 0),
+        ]
+      )
+      .cropped(to: image.extent)
+
+    let noirImage = grain.applyingFilter(
+      "CIOverlayBlendMode",
+      parameters: [kCIInputBackgroundImageKey: vignetted]
+    ).cropped(to: image.extent)
+
+    return blendFilteredImage(image, with: noirImage, intensity: clampedIntensity)
   }
 
   private func applySketchFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
