@@ -226,12 +226,14 @@ final class AuraFilteredVideoView: UIView {
   private func makeVideoComposition(for asset: AVAsset) -> AVVideoComposition {
     let filterHandler: (AVAsynchronousCIImageFilteringRequest) -> Void = { [weak self] request in
       let sourceImage = request.sourceImage.clampedToExtent()
+      let compositionTime = request.compositionTime.seconds
+      let time = compositionTime.isFinite ? compositionTime : 0
       guard let self else {
         request.finish(with: request.sourceImage, context: nil)
         return
       }
 
-      let outputImage = self.filteredImage(for: sourceImage).cropped(to: request.sourceImage.extent)
+      let outputImage = self.filteredImage(for: sourceImage, time: time).cropped(to: request.sourceImage.extent)
       request.finish(with: outputImage, context: self.ciContext)
     }
 
@@ -241,7 +243,7 @@ final class AuraFilteredVideoView: UIView {
     )
   }
 
-  private func filteredImage(for image: CIImage) -> CIImage {
+  private func filteredImage(for image: CIImage, time: Double) -> CIImage {
     let (filterId, matrix, intensity) = snapshotFilterState()
 
     guard intensity > 0.001 else {
@@ -249,6 +251,8 @@ final class AuraFilteredVideoView: UIView {
     }
 
     switch filterId {
+    case "vintage":
+      return applyVintageFilter(to: image, intensity: intensity, time: time)
     case "sketch":
       return applySketchFilter(to: image, intensity: intensity)
     default:
@@ -329,6 +333,203 @@ final class AuraFilteredVideoView: UIView {
     return clampFilter.outputImage ?? matrixOutput
   }
 
+  private func applyVintageFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+    let flicker = CGFloat(sin(time * 12.0) * 0.03 + sin(time * 23.0 + 0.7) * 0.015)
+
+    let monochromeBase = image
+      .applyingFilter("CIPhotoEffectTonal")
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0.12 + clampedIntensity * 0.08,
+          kCIInputBrightnessKey: 0.01 + flicker * (0.5 + clampedIntensity * 0.4),
+          kCIInputContrastKey: 1.02 + clampedIntensity * 0.16,
+        ]
+      )
+
+    let oldStockImage = monochromeBase.applyingFilter(
+      "CIHighlightShadowAdjust",
+      parameters: [
+        "inputShadowAmount": 0.42 + clampedIntensity * 0.18,
+        "inputHighlightAmount": 0.74 - clampedIntensity * 0.12,
+      ]
+    )
+    .applyingFilter(
+      "CISepiaTone",
+      parameters: [kCIInputIntensityKey: 0.10 + clampedIntensity * 0.10]
+    )
+    .applyingFilter(
+      "CITemperatureAndTint",
+      parameters: [
+        "inputNeutral": CIVector(x: 6500, y: 0),
+        "inputTargetNeutral": CIVector(
+          x: 6000 - clampedIntensity * 300,
+          y: 8 + clampedIntensity * 8
+        ),
+      ]
+    )
+    .applyingFilter(
+      "CIColorControls",
+      parameters: [
+        kCIInputSaturationKey: 0.10 + clampedIntensity * 0.04,
+        kCIInputBrightnessKey: 0.015,
+        kCIInputContrastKey: 1.06 + clampedIntensity * 0.10,
+      ]
+    )
+    .applyingFilter(
+      "CIExposureAdjust",
+      parameters: [kCIInputEVKey: flicker * 1.2]
+    )
+    .applyingFilter(
+      "CIBloom",
+      parameters: [
+        kCIInputRadiusKey: 1.0 + clampedIntensity * 0.8,
+        kCIInputIntensityKey: 0.10 + clampedIntensity * 0.08,
+      ]
+    )
+
+    let baseWithVignette = oldStockImage.applyingFilter(
+      "CIVignette",
+      parameters: [
+        kCIInputIntensityKey: 0.38 + clampedIntensity * 0.32,
+        kCIInputRadiusKey: 1.5 + clampedIntensity * 0.35,
+      ]
+    )
+    .cropped(to: image.extent)
+
+    let randomNoise = CIFilter(name: "CIRandomGenerator")?.outputImage ?? image
+    let noiseOffsetX = CGFloat(time * 47.0).truncatingRemainder(dividingBy: 512)
+    let noiseOffsetY = CGFloat(time * 29.0).truncatingRemainder(dividingBy: 512)
+    let animatedNoise = randomNoise
+      .transformed(by: CGAffineTransform(translationX: noiseOffsetX, y: noiseOffsetY))
+      .cropped(to: image.extent)
+
+    let grainLayer = animatedNoise
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0,
+          kCIInputBrightnessKey: -0.02,
+          kCIInputContrastKey: 1.65 + clampedIntensity * 0.35,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 0.18, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 0.18, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 0.18, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.09 + clampedIntensity * 0.08),
+          "inputBiasVector": CIVector(x: 0.41, y: 0.38, z: 0.33, w: 0),
+        ]
+      )
+      .cropped(to: image.extent)
+
+    let grainyImage = grainLayer.applyingFilter(
+      "CIOverlayBlendMode",
+      parameters: [kCIInputBackgroundImageKey: baseWithVignette]
+    )
+    .cropped(to: image.extent)
+
+    let scratchSeed = animatedNoise
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0,
+          kCIInputBrightnessKey: -0.45,
+          kCIInputContrastKey: 7.0 + clampedIntensity * 3.0,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 16, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 16, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 16, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+          "inputBiasVector": CIVector(x: -13.8, y: -13.8, z: -13.8, w: 0),
+        ]
+      )
+      .applyingFilter(
+        "CIMotionBlur",
+        parameters: [
+          kCIInputRadiusKey: 18 + clampedIntensity * 18,
+          kCIInputAngleKey: Double.pi / 2,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 0.85, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 0.82, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 0.76, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.16 + clampedIntensity * 0.12),
+          "inputBiasVector": CIVector(x: 0.10, y: 0.08, z: 0.04, w: 0),
+        ]
+      )
+      .cropped(to: image.extent)
+
+    let dustSeed = randomNoise
+      .transformed(
+        by: CGAffineTransform(
+          translationX: CGFloat(time * 83.0).truncatingRemainder(dividingBy: 512),
+          y: CGFloat(time * 61.0).truncatingRemainder(dividingBy: 512)
+        )
+      )
+      .cropped(to: image.extent)
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0,
+          kCIInputBrightnessKey: -0.30,
+          kCIInputContrastKey: 10.0 + clampedIntensity * 4.0,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 10, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 10, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 10, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+          "inputBiasVector": CIVector(x: -8.9, y: -8.9, z: -8.9, w: 0),
+        ]
+      )
+      .applyingFilter(
+        "CIBloom",
+        parameters: [
+          kCIInputRadiusKey: 1.2,
+          kCIInputIntensityKey: 0.25 + clampedIntensity * 0.15,
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+          "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+          "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.06 + clampedIntensity * 0.05),
+          "inputBiasVector": CIVector(x: 0.18, y: 0.16, z: 0.12, w: 0),
+        ]
+      )
+      .cropped(to: image.extent)
+
+    let scratchedImage = scratchSeed.applyingFilter(
+      "CIScreenBlendMode",
+      parameters: [kCIInputBackgroundImageKey: grainyImage]
+    )
+    .cropped(to: image.extent)
+
+    let vintageImage = dustSeed.applyingFilter(
+      "CIScreenBlendMode",
+      parameters: [kCIInputBackgroundImageKey: scratchedImage]
+    )
+    .cropped(to: image.extent)
+
+    return blendFilteredImage(image, with: vintageImage, intensity: clampedIntensity)
+  }
+
   private func applySketchFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
     let clampedIntensity = max(0, min(intensity, 1))
 
@@ -370,14 +571,22 @@ final class AuraFilteredVideoView: UIView {
     )
     .cropped(to: image.extent)
 
-    guard clampedIntensity < 0.999, let dissolve = CIFilter(name: "CIDissolveTransition") else {
-      return sketchImage
+    return blendFilteredImage(image, with: sketchImage, intensity: clampedIntensity)
+  }
+
+  private func blendFilteredImage(
+    _ image: CIImage,
+    with filteredImage: CIImage,
+    intensity: CGFloat
+  ) -> CIImage {
+    guard intensity < 0.999, let dissolve = CIFilter(name: "CIDissolveTransition") else {
+      return filteredImage.cropped(to: image.extent)
     }
 
     dissolve.setValue(image, forKey: kCIInputImageKey)
-    dissolve.setValue(sketchImage, forKey: "inputTargetImage")
-    dissolve.setValue(clampedIntensity, forKey: kCIInputTimeKey)
-    return dissolve.outputImage?.cropped(to: image.extent) ?? sketchImage
+    dissolve.setValue(filteredImage, forKey: "inputTargetImage")
+    dissolve.setValue(intensity, forKey: kCIInputTimeKey)
+    return dissolve.outputImage?.cropped(to: image.extent) ?? filteredImage.cropped(to: image.extent)
   }
 
   private func updateFilterState() {
