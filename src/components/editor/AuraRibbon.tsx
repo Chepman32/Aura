@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
-import { Canvas, Rect, Line, vec } from '@shopify/react-native-skia';
+import { Canvas, RoundedRect, Line, vec } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -21,6 +21,7 @@ import { SPRING_STIFF } from '../../theme/animations';
 const SWATCH_WIDTH = 64;
 const SWATCH_HEIGHT = 48;
 const SWATCH_GAP = 2;
+const SWATCH_RADIUS = 14;
 const SWATCH_STRIDE = SWATCH_WIDTH + SWATCH_GAP;
 const RIBBON_HEIGHT = SWATCH_HEIGHT;
 const TOTAL_FILTERS = FILTERS.length;
@@ -45,6 +46,30 @@ function indexToOffset(index: number, viewWidth: number): number {
   'worklet';
   const swatchCenter = index * SWATCH_STRIDE + SWATCH_WIDTH / 2;
   return viewWidth / 2 - swatchCenter;
+}
+
+/**
+ * Converts a tapped x-coordinate in the ribbon viewport to the nearest filter
+ * index in the translated swatch row.
+ */
+function positionToIndex(x: number, offset: number): number {
+  'worklet';
+  const contentX = x - offset;
+  const raw = (contentX - SWATCH_WIDTH / 2) / SWATCH_STRIDE;
+  return Math.min(Math.max(Math.round(raw), 0), TOTAL_FILTERS - 1);
+}
+
+function withAlpha(hexColor: string, alpha: number): string {
+  const normalized = hexColor.replace('#', '');
+  if (normalized.length !== 6) {
+    return `rgba(255,255,255,${alpha})`;
+  }
+
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 interface AuraRibbonProps {
@@ -82,9 +107,10 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
     if (containerWidth === 0) return;
     const idx = FILTERS.findIndex((f) => f.id === activeFilterId);
     if (idx >= 0) {
+      lastIndex.value = idx;
       translateX.value = withSpring(indexToOffset(idx, containerWidth), SPRING_STIFF);
     }
-  }, [activeFilterId, containerWidth, translateX]);
+  }, [activeFilterId, containerWidth, lastIndex, translateX]);
 
   const commitFilter = useCallback(
     (index: number) => {
@@ -100,6 +126,18 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
     haptics.light();
   }, [haptics]);
 
+  const snapToIndex = useCallback(
+    (index: number) => {
+      if (containerWidth === 0) return;
+
+      const clampedIndex = Math.min(Math.max(index, 0), TOTAL_FILTERS - 1);
+      lastIndex.value = clampedIndex;
+      translateX.value = withSpring(indexToOffset(clampedIndex, containerWidth), SPRING_STIFF);
+      commitFilter(clampedIndex);
+    },
+    [commitFilter, containerWidth, lastIndex, translateX],
+  );
+
   // ---- Min / max allowed scroll offsets so we can't drag past ends
   const minOffset = containerWidth > 0 ? indexToOffset(TOTAL_FILTERS - 1, containerWidth) : 0;
   const maxOffset = containerWidth > 0 ? indexToOffset(0, containerWidth) : 0;
@@ -107,6 +145,7 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
   const RUBBER_BAND = 0.3;
 
   const panGesture = Gesture.Pan()
+    .minDistance(6)
     .onBegin(() => {
       'worklet';
       dragStartOffset.value = translateX.value;
@@ -144,6 +183,24 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
       runOnJS(commitFilter)(clampedIndex);
     });
 
+  const tapGesture = Gesture.Tap()
+    .maxDistance(12)
+    .onEnd(({ x }) => {
+      'worklet';
+      if (containerWidth === 0) return;
+
+      const tappedIndex = positionToIndex(x, translateX.value);
+      const didChange = tappedIndex !== lastIndex.value;
+
+      if (didChange) {
+        runOnJS(triggerHaptic)();
+      }
+
+      runOnJS(snapToIndex)(tappedIndex);
+    });
+
+  const composedGesture = Gesture.Race(panGesture, tapGesture);
+
   const animatedRowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
@@ -157,23 +214,32 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
       <Text style={styles.filterName}>{activeFilter?.name ?? ''}</Text>
 
       <View style={styles.ribbonOuter}>
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={composedGesture}>
           <View style={styles.ribbonContainer}>
             {/* Skia canvas for swatch rectangles */}
             <Animated.View style={[styles.swatchRow, animatedRowStyle]}>
               <Canvas style={{ width: CONTENT_WIDTH, height: RIBBON_HEIGHT }}>
                 {FILTERS.map((filter, index) => (
-                  <Rect
+                  <RoundedRect
                     key={filter.id}
                     x={index * SWATCH_STRIDE}
                     y={0}
                     width={SWATCH_WIDTH}
                     height={SWATCH_HEIGHT}
+                    r={SWATCH_RADIUS}
                     color={filter.dominantColor}
                   />
                 ))}
               </Canvas>
             </Animated.View>
+
+            <View
+              pointerEvents="none"
+              style={[
+                styles.selectionFrame,
+                { backgroundColor: withAlpha(activeFilter?.dominantColor ?? colors.textPrimary, 0.18) },
+              ]}
+            />
 
             {/* Playhead — fixed white vertical line at center */}
             <View style={styles.playheadContainer} pointerEvents="none">
@@ -213,6 +279,17 @@ const styles = StyleSheet.create({
   ribbonContainer: {
     flex: 1,
     position: 'relative',
+  },
+  selectionFrame: {
+    position: 'absolute',
+    top: 0,
+    left: '50%',
+    width: SWATCH_WIDTH,
+    height: SWATCH_HEIGHT,
+    marginLeft: -SWATCH_WIDTH / 2,
+    borderRadius: SWATCH_RADIUS,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.92)',
   },
   swatchRow: {
     position: 'absolute',
