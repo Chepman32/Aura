@@ -266,6 +266,8 @@ final class AuraFilteredVideoView: UIView {
     }
 
     switch filterId {
+    case "cinematic":
+      return applyCinematicFilter(to: image, intensity: intensity)
     case "vintage":
       return applyVintageFilter(to: image, intensity: intensity, time: time)
     case "sketch":
@@ -348,6 +350,147 @@ final class AuraFilteredVideoView: UIView {
     clampFilter.setValue(CIVector(x: 1, y: 1, z: 1, w: 1), forKey: "inputMaxComponents")
 
     return clampFilter.outputImage ?? matrixOutput
+  }
+
+  private func applyCinematicFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+
+    let baseImage = image
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 1.02 + clampedIntensity * 0.10,
+          kCIInputBrightnessKey: -0.01,
+          kCIInputContrastKey: 1.04 + clampedIntensity * 0.22,
+        ]
+      )
+      .applyingFilter(
+        "CIHighlightShadowAdjust",
+        parameters: [
+          "inputShadowAmount": 0.10 + clampedIntensity * 0.10,
+          "inputHighlightAmount": 0.92 - clampedIntensity * 0.12,
+        ]
+      )
+
+    let luminanceMask = image
+      .applyingFilter(
+        "CIColorControls",
+        parameters: [
+          kCIInputSaturationKey: 0,
+          kCIInputContrastKey: 1.15 + clampedIntensity * 0.25,
+        ]
+      )
+      .clampedToExtent()
+
+    let shadowMask = luminanceMask
+      .applyingFilter("CIColorInvert")
+      .applyingFilter(
+        "CIGaussianBlur",
+        parameters: [kCIInputRadiusKey: 10 + clampedIntensity * 10]
+      )
+      .cropped(to: image.extent)
+
+    let highlightMask = luminanceMask
+      .applyingFilter(
+        "CIGaussianBlur",
+        parameters: [kCIInputRadiusKey: 10 + clampedIntensity * 10]
+      )
+      .cropped(to: image.extent)
+
+    let coolShadowLayer = baseImage
+      .applyingFilter(
+        "CITemperatureAndTint",
+        parameters: [
+          "inputNeutral": CIVector(x: 6500, y: 0),
+          "inputTargetNeutral": CIVector(
+            x: 8200 + clampedIntensity * 900,
+            y: -28 - clampedIntensity * 14
+          ),
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 0.90, y: 0.02, z: 0.00, w: 0),
+          "inputGVector": CIVector(x: 0.00, y: 1.02, z: 0.05, w: 0),
+          "inputBVector": CIVector(x: 0.00, y: 0.05, z: 1.12, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+          "inputBiasVector": CIVector(
+            x: -0.01,
+            y: 0.0,
+            z: 0.01 + clampedIntensity * 0.02,
+            w: 0
+          ),
+        ]
+      )
+
+    let warmHighlightLayer = baseImage
+      .applyingFilter(
+        "CITemperatureAndTint",
+        parameters: [
+          "inputNeutral": CIVector(x: 6500, y: 0),
+          "inputTargetNeutral": CIVector(
+            x: 4700 - clampedIntensity * 450,
+            y: 26 + clampedIntensity * 10
+          ),
+        ]
+      )
+      .applyingFilter(
+        "CIColorMatrix",
+        parameters: [
+          "inputRVector": CIVector(x: 1.10, y: 0.04, z: -0.03, w: 0),
+          "inputGVector": CIVector(x: 0.02, y: 1.01, z: -0.02, w: 0),
+          "inputBVector": CIVector(x: -0.03, y: 0.00, z: 0.90, w: 0),
+          "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+          "inputBiasVector": CIVector(
+            x: 0.02 + clampedIntensity * 0.015,
+            y: 0.005,
+            z: -0.01,
+            w: 0
+          ),
+        ]
+      )
+
+    let splitShadowImage = coolShadowLayer.applyingFilter(
+      "CIBlendWithMask",
+      parameters: [
+        kCIInputBackgroundImageKey: baseImage,
+        kCIInputMaskImageKey: shadowMask,
+      ]
+    )
+    .cropped(to: image.extent)
+
+    let splitToneImage = warmHighlightLayer.applyingFilter(
+      "CIBlendWithMask",
+      parameters: [
+        kCIInputBackgroundImageKey: splitShadowImage,
+        kCIInputMaskImageKey: highlightMask,
+      ]
+    )
+    .cropped(to: image.extent)
+
+    let cinematicImage = splitToneImage
+      .applyingFilter(
+        "CISharpenLuminance",
+        parameters: [kCIInputSharpnessKey: 0.20 + clampedIntensity * 0.35]
+      )
+      .applyingFilter(
+        "CIBloom",
+        parameters: [
+          kCIInputRadiusKey: 1.2 + clampedIntensity * 1.3,
+          kCIInputIntensityKey: 0.10 + clampedIntensity * 0.08,
+        ]
+      )
+      .applyingFilter(
+        "CIVignette",
+        parameters: [
+          kCIInputIntensityKey: 0.20 + clampedIntensity * 0.32,
+          kCIInputRadiusKey: 1.4 + clampedIntensity * 0.35,
+        ]
+      )
+      .cropped(to: image.extent)
+
+    return blendFilteredImage(image, with: cinematicImage, intensity: clampedIntensity)
   }
 
   private func applyVintageFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
