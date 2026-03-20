@@ -18,12 +18,15 @@ export interface AuraFilteredVideoProgressEvent {
 export interface AuraFilteredVideoViewProps extends ViewProps {
   sourceUri?: string | null;
   paused: boolean;
+  muted?: boolean;
   repeatVideo?: boolean;
   resizeMode?: 'cover' | 'contain' | 'stretch';
   filterId: string;
   filterMatrix: ReadonlyArray<number>;
   filterMatrixPayload?: string;
   filterIntensity: number;
+  seekToTime?: number;
+  seekRequestId?: number;
   style?: StyleProp<ViewStyle>;
   onLoad?: (event: NativeSyntheticEvent<AuraFilteredVideoLoadEvent>) => void;
   onProgress?: (event: NativeSyntheticEvent<AuraFilteredVideoProgressEvent>) => void;

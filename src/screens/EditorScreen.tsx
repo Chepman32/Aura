@@ -3,11 +3,14 @@ import {
   StyleSheet,
   View,
   Text,
+  LayoutChangeEvent,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Play, Pause } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 
 import type { RootStackParamList } from '../app/navigation/types';
 import { useEditorStore } from '../store/useEditorStore';
@@ -35,9 +38,11 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   const setIsPlaying = useEditorStore((s) => s.setIsPlaying);
   const currentTime = useEditorStore((s) => s.currentTime);
   const duration = useEditorStore((s) => s.duration);
+  const requestSeek = useEditorStore((s) => s.requestSeek);
   const reset = useEditorStore((s) => s.reset);
 
   const [sliderVisible, setSliderVisible] = useState(false);
+  const [timelineWidth, setTimelineWidth] = useState(0);
 
   useEffect(() => {
     setVideoUri(videoUri);
@@ -68,6 +73,41 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   // Timeline progress ratio
   const progressRatio = duration > 0 ? currentTime / duration : 0;
 
+  const seekToRatio = useCallback((ratio: number) => {
+    if (duration <= 0) {
+      return;
+    }
+
+    const clampedRatio = Math.max(0, Math.min(1, ratio));
+    requestSeek(clampedRatio * duration);
+  }, [duration, requestSeek]);
+
+  const seekToPosition = useCallback((x: number) => {
+    if (timelineWidth <= 0) {
+      return;
+    }
+
+    seekToRatio(x / timelineWidth);
+  }, [seekToRatio, timelineWidth]);
+
+  const handleTimelineLayout = useCallback((event: LayoutChangeEvent) => {
+    setTimelineWidth(event.nativeEvent.layout.width);
+  }, []);
+
+  const timelinePanGesture = Gesture.Pan()
+    .onUpdate(({ x }) => {
+      'worklet';
+      runOnJS(seekToPosition)(x);
+    });
+
+  const timelineTapGesture = Gesture.Tap()
+    .onEnd(({ x }) => {
+      'worklet';
+      runOnJS(seekToPosition)(x);
+    });
+
+  const timelineGesture = Gesture.Simultaneous(timelinePanGesture, timelineTapGesture);
+
   return (
     <View style={styles.container}>
       {/* Video Viewport */}
@@ -92,26 +132,29 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
 
         {/* Timeline bar */}
         <View style={styles.timelineContainer}>
-          <View style={styles.timelineTrack}>
-            <View
-              style={[
-                styles.timelineProgress,
-                {
-                  width: `${progressRatio * 100}%`,
-                  backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.timelineThumb,
-                {
-                  left: `${progressRatio * 100}%`,
-                  backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
-                },
-              ]}
-            />
-          </View>
+          <GestureDetector gesture={timelineGesture}>
+            <View onLayout={handleTimelineLayout} style={styles.timelineTrack}>
+              <View
+                style={[
+                  styles.timelineProgress,
+                  {
+                    width: `${progressRatio * 100}%`,
+                    backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.timelineThumb,
+                  {
+                    left: `${progressRatio * 100}%`,
+                    backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
+                  },
+                ]}
+              />
+              <View style={styles.timelineTouchTarget} />
+            </View>
+          </GestureDetector>
         </View>
 
         {/* Filter name — tap to toggle intensity slider */}
@@ -196,6 +239,13 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     marginLeft: -6,
+  },
+  timelineTouchTarget: {
+    position: 'absolute',
+    top: -14,
+    right: 0,
+    bottom: -14,
+    left: 0,
   },
   filterNameButton: {
     alignItems: 'center',

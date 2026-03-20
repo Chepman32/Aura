@@ -30,6 +30,12 @@ final class AuraFilteredVideoView: UIView {
     }
   }
 
+  @objc var muted = false {
+    didSet {
+      player.isMuted = muted
+    }
+  }
+
   @objc var repeatVideo = false
 
   @objc var resizeMode: NSString = "cover" {
@@ -59,6 +65,14 @@ final class AuraFilteredVideoView: UIView {
   @objc var filterIntensity: NSNumber = 1 {
     didSet {
       updateFilterState()
+    }
+  }
+
+  @objc var seekToTime: NSNumber = 0
+
+  @objc var seekRequestId: NSNumber = 0 {
+    didSet {
+      seekIfNeeded()
     }
   }
 
@@ -119,6 +133,7 @@ final class AuraFilteredVideoView: UIView {
     playerLayer.player = player
     layer.addSublayer(playerLayer)
 
+    player.isMuted = muted
     updateVideoGravity()
     updateFilterState()
     installTimeObserver()
@@ -677,6 +692,23 @@ final class AuraFilteredVideoView: UIView {
     guard let item = player.currentItem, item.status == .readyToPlay else { return }
     item.videoComposition = makeVideoComposition(for: item.asset)
     refreshCurrentFrameIfPaused()
+  }
+
+  private func seekIfNeeded() {
+    let seconds = max(0, Double(truncating: seekToTime))
+    let targetTime = CMTime(seconds: seconds, preferredTimescale: 600)
+
+    guard player.currentItem != nil else { return }
+
+    player.seek(
+      to: targetTime,
+      toleranceBefore: .zero,
+      toleranceAfter: .zero
+    ) { [weak self] _ in
+      guard let self else { return }
+      self.onProgress?(["currentTime": seconds])
+      self.refreshCurrentFrameIfPaused()
+    }
   }
 
   private func refreshCurrentFrameIfPaused() {
