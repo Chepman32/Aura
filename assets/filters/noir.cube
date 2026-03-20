@@ -1,0 +1,14 @@
+TITLE "Noir"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Heavy desaturation, crushed blacks, boosted contrast
+
+0.000 0.000 0.000
+0.213 0.213 0.213
+0.715 0.715 0.715
+0.928 0.928 0.928
+0.007 0.007 0.007
+0.220 0.220 0.220
+0.722 0.722 0.722
+0.940 0.940 0.940

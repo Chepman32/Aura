@@ -1,0 +1,14 @@
+TITLE "Bleach"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Bleach bypass: partial desaturation, high contrast, lifted gritty blacks
+
+0.000 0.000 0.000
+0.820 0.510 0.180
+0.590 0.820 0.180
+0.960 0.960 0.360
+0.180 0.180 0.820
+0.820 0.510 0.820
+0.360 0.820 0.820
+1.000 1.000 1.000

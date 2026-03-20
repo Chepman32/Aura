@@ -1,0 +1,14 @@
+TITLE "Cinematic"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Teal shadows + orange highlights: cyan in darks, warm in lights
+
+0.020 0.000 0.080
+0.820 0.000 0.000
+0.020 0.940 0.080
+0.900 0.940 0.000
+0.020 0.000 1.000
+0.900 0.000 1.000
+0.020 0.940 1.000
+1.000 0.980 1.000

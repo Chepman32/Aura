@@ -1,0 +1,14 @@
+TITLE "Vintage"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Sepia-warm: reds/greens shifted warm, blues suppressed, lifted blacks
+
+0.020 0.005 0.000
+0.412 0.349 0.272
+0.789 0.691 0.544
+0.952 0.832 0.662
+0.020 0.010 0.000
+0.412 0.355 0.272
+0.770 0.680 0.540
+0.960 0.840 0.660

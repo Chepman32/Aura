@@ -1,0 +1,14 @@
+TITLE "Sunset"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Warm orange-amber: reds boosted, blues crushed, blacks lifted warm
+
+0.040 0.010 0.000
+1.000 0.050 0.000
+0.040 1.000 0.000
+1.000 1.000 0.000
+0.040 0.010 0.680
+1.000 0.050 0.680
+0.040 1.000 0.680
+1.000 1.000 0.680

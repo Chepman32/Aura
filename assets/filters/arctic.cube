@@ -1,0 +1,14 @@
+TITLE "Arctic"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Cool blue tint, lifted exposure, reduced reds
+
+0.020 0.030 0.060
+0.870 0.020 0.060
+0.020 0.950 0.060
+0.870 0.950 0.060
+0.020 0.030 1.100
+0.870 0.020 1.100
+0.020 0.950 1.100
+0.870 0.950 1.000
