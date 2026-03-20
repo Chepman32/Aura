@@ -44,6 +44,12 @@ final class AuraFilteredVideoView: UIView {
     }
   }
 
+  @objc var filterMatrixPayload: NSString = "" {
+    didSet {
+      updateFilterState()
+    }
+  }
+
   @objc var filterIntensity: NSNumber = 1 {
     didSet {
       updateFilterState()
@@ -70,6 +76,9 @@ final class AuraFilteredVideoView: UIView {
   private var itemStatusObservation: NSKeyValueObservation?
   private var currentMatrix = identityColorMatrix
   private var currentIntensity: CGFloat = 1
+  private var scheduledFrameRefresh: DispatchWorkItem?
+  private var isRefreshingCurrentFrame = false
+  private var needsAnotherFrameRefresh = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -83,6 +92,7 @@ final class AuraFilteredVideoView: UIView {
 
   deinit {
     sourceTask?.cancel()
+    scheduledFrameRefresh?.cancel()
     tearDownCurrentItemObservers()
     if let timeObserver {
       player.removeTimeObserver(timeObserver)
@@ -153,7 +163,7 @@ final class AuraFilteredVideoView: UIView {
     }
 
     let item = AVPlayerItem(asset: asset)
-    item.videoComposition = await makeVideoComposition(for: asset)
+    item.videoComposition = makeVideoComposition(for: asset)
     return item
   }
 
@@ -206,7 +216,7 @@ final class AuraFilteredVideoView: UIView {
     return URL(string: uri)
   }
 
-  private func makeVideoComposition(for asset: AVAsset) async -> AVVideoComposition? {
+  private func makeVideoComposition(for asset: AVAsset) -> AVVideoComposition {
     let filterHandler: (AVAsynchronousCIImageFilteringRequest) -> Void = { [weak self] request in
       let sourceImage = request.sourceImage.clampedToExtent()
       guard let self else {
@@ -216,13 +226,6 @@ final class AuraFilteredVideoView: UIView {
 
       let outputImage = self.filteredImage(for: sourceImage).cropped(to: request.sourceImage.extent)
       request.finish(with: outputImage, context: self.ciContext)
-    }
-
-    if #available(iOS 16.0, *) {
-      return try? await AVVideoComposition.videoComposition(
-        with: asset,
-        applyingCIFiltersWithHandler: filterHandler
-      )
     }
 
     return AVVideoComposition(
@@ -307,7 +310,17 @@ final class AuraFilteredVideoView: UIView {
   }
 
   private func updateFilterState() {
-    let matrixValues = (filterMatrix as? [NSNumber])?.map { CGFloat(truncating: $0) } ?? []
+    let matrixValues = parseFilterMatrixPayload() ?? filterMatrix.compactMap { value -> CGFloat? in
+      if let number = value as? NSNumber {
+        return CGFloat(truncating: number)
+      }
+
+      if let double = value as? Double {
+        return double
+      }
+
+      return nil
+    }
     let nextMatrix = matrixValues.count == identityColorMatrix.count ? matrixValues : identityColorMatrix
     let nextIntensity = max(0, min(CGFloat(truncating: filterIntensity), 1))
 
@@ -315,6 +328,25 @@ final class AuraFilteredVideoView: UIView {
     currentMatrix = nextMatrix
     currentIntensity = nextIntensity
     filterStateLock.unlock()
+
+    scheduleFilterRefreshIfNeeded()
+  }
+
+  private func parseFilterMatrixPayload() -> [CGFloat]? {
+    let payload = (filterMatrixPayload as String).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !payload.isEmpty else { return nil }
+
+    let values = payload.split(separator: ",").compactMap { component -> CGFloat? in
+      let trimmed = component.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let value = Double(trimmed) else { return nil }
+      return CGFloat(value)
+    }
+
+    guard values.count == identityColorMatrix.count else {
+      return nil
+    }
+
+    return values
   }
 
   private func snapshotFilterState() -> (matrix: [CGFloat], intensity: CGFloat) {
@@ -323,6 +355,69 @@ final class AuraFilteredVideoView: UIView {
     let intensity = currentIntensity
     filterStateLock.unlock()
     return (matrix, intensity)
+  }
+
+  private func scheduleFilterRefreshIfNeeded() {
+    if Thread.isMainThread {
+      scheduleFilterRefreshIfNeededOnMain()
+      return
+    }
+
+    DispatchQueue.main.async { [weak self] in
+      self?.scheduleFilterRefreshIfNeededOnMain()
+    }
+  }
+
+  private func scheduleFilterRefreshIfNeededOnMain() {
+    guard player.currentItem != nil else { return }
+
+    scheduledFrameRefresh?.cancel()
+
+    let workItem = DispatchWorkItem { [weak self] in
+      self?.applyFilterRefreshIfNeeded()
+    }
+
+    scheduledFrameRefresh = workItem
+    DispatchQueue.main.async(execute: workItem)
+  }
+
+  private func applyFilterRefreshIfNeeded() {
+    if !Thread.isMainThread {
+      DispatchQueue.main.async { [weak self] in
+        self?.applyFilterRefreshIfNeeded()
+      }
+      return
+    }
+
+    scheduledFrameRefresh = nil
+
+    guard let item = player.currentItem, item.status == .readyToPlay else { return }
+    item.videoComposition = makeVideoComposition(for: item.asset)
+
+    guard paused else { return }
+
+    if isRefreshingCurrentFrame {
+      needsAnotherFrameRefresh = true
+      return
+    }
+
+    isRefreshingCurrentFrame = true
+    let currentTime = player.currentTime()
+
+    player.seek(
+      to: currentTime,
+      toleranceBefore: .zero,
+      toleranceAfter: .zero
+    ) { [weak self] _ in
+      guard let self else { return }
+
+      self.isRefreshingCurrentFrame = false
+
+      if self.needsAnotherFrameRefresh {
+        self.needsAnotherFrameRefresh = false
+        self.scheduleFilterRefreshIfNeededOnMain()
+      }
+    }
   }
 
   private func attachPlayerItem(_ item: AVPlayerItem) {

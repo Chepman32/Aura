@@ -21,6 +21,7 @@ export interface AuraFilteredVideoViewProps extends ViewProps {
   repeatVideo?: boolean;
   resizeMode?: 'cover' | 'contain' | 'stretch';
   filterMatrix: ReadonlyArray<number>;
+  filterMatrixPayload?: string;
   filterIntensity: number;
   style?: StyleProp<ViewStyle>;
   onLoad?: (event: NativeSyntheticEvent<AuraFilteredVideoLoadEvent>) => void;
