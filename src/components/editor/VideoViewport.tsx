@@ -1,46 +1,33 @@
 import React, { useCallback, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Video from 'react-native-video';
-import {
-  Canvas,
-  Fill,
-  Paint,
-  ColorMatrix,
-  BackdropFilter,
-  rect,
-  Rect,
-} from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useSharedValue, runOnJS } from 'react-native-reanimated';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
 
 import { useEditorStore } from '../../store/useEditorStore';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
-import { useFilterPreview } from '../../hooks/useFilterPreview';
+import { getFilterById } from '../../filters';
 import { colors } from '../../theme';
 
 interface VideoViewportProps {
-  /** Height of this viewport (caller controls the 65% layout) */
   height: number;
 }
 
 /**
- * Top section of the editor — video playback + live color matrix overlay.
+ * Video viewport with a colored overlay that represents the active filter.
  *
- * Architecture note:
- * React Native Video renders into a hardware-accelerated native surface that
- * sits outside the Skia compositor, so a Skia BackdropFilter cannot sample
- * actual video pixels at runtime. Instead we use BackdropFilter to apply the
- * ColorMatrix to everything rendered behind the transparent Skia Canvas
- * (background color of the container + any non-hardware-accelerated views).
- * The visible tint effect comes from the ColorMatrix being applied on a
- * full-screen Fill that composites over the video — the dominant-color tint
- * communicates the filter mood while the video plays underneath unaffected on
- * the native surface. This is the standard approach in production video editors
- * on React Native until a Skia-native video decoder (e.g. via JSI/TextureView)
- * is integrated.
+ * Since Skia BackdropFilter cannot capture native Video pixels (different
+ * compositor), we use a semi-transparent colored View overlay. The overlay
+ * color is the filter's dominantColor at reduced opacity scaled by intensity.
+ * This gives clear visual feedback when switching filters.
  *
- * Long press gesture: temporarily zeroes intensity so the user can preview the
- * original footage; releasing restores the previous intensity.
+ * Long press: temporarily hides overlay to preview original.
+ * Tap: play/pause toggle.
  */
 export default function VideoViewport({ height }: VideoViewportProps): React.JSX.Element {
   const currentVideoUri = useEditorStore((s) => s.currentVideoUri);
@@ -49,17 +36,17 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
   const setFilterIntensity = useEditorStore((s) => s.setFilterIntensity);
   const isPlaying = useEditorStore((s) => s.isPlaying);
 
-  // Preserve the intensity before a long press so we can restore it on release.
   const savedIntensity = useRef<number>(filterIntensity);
-
   const { videoRef, toggle, onLoad, onProgress, onEnd } = useVideoPlayer();
 
-  // The blended matrix for the current filter + intensity.
-  const colorMatrix = useFilterPreview(activeFilterId, filterIntensity);
+  const filter = getFilterById(activeFilterId);
+  const dominantColor = filter?.dominantColor ?? '#FFFFFF';
+  const isOriginal = activeFilterId === 'original';
 
-  // ------------------------------------------------------------------
-  // Long-press gesture — show original while held, restore on release
-  // ------------------------------------------------------------------
+  // Overlay opacity = 0.35 * intensity for non-original filters
+  const overlayOpacity = isOriginal ? 0 : 0.35 * filterIntensity;
+
+  // Long-press gesture — show original while held
   const isLongPressing = useSharedValue(false);
 
   const restoreIntensity = useCallback(() => {
@@ -96,7 +83,6 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={[styles.container, { height }]}>
-        {/* Native video surface — hardware layer, below Skia */}
         {currentVideoUri ? (
           <Video
             ref={videoRef}
@@ -104,7 +90,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
             style={StyleSheet.absoluteFill}
             resizeMode="cover"
             paused={!isPlaying}
-            repeat={false}
+            repeat
             onLoad={({ duration }) => onLoad(duration)}
             onProgress={({ currentTime }) => onProgress(currentTime)}
             onEnd={onEnd}
@@ -113,27 +99,19 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
           <View style={[StyleSheet.absoluteFill, styles.placeholder]} />
         )}
 
-        {/*
-         * Skia Canvas overlay — transparent background so the video shows
-         * through. BackdropFilter applies the ColorMatrix to the compositor
-         * content behind the canvas (the dark placeholder / app background).
-         * When a filter other than 'original' is active, a subtle tinted Fill
-         * overlaid at low opacity communicates the grade to the user.
-         */}
-        <Canvas style={[StyleSheet.absoluteFill, styles.canvas]}>
-          <BackdropFilter
-            clip={{ x: 0, y: 0, width: 10000, height: 10000 }}
-            filter={<ColorMatrix matrix={colorMatrix} />}
-          >
-            {/*
-             * A fully transparent fill — we only want the backdrop filter
-             * to be the visual output when identity matrix is active.
-             * When any filter is active the matrix tints the composited
-             * background visible at the edges / letterbox regions.
-             */}
-            <Fill color="transparent" />
-          </BackdropFilter>
-        </Canvas>
+        {/* Color overlay representing the active filter */}
+        {!isOriginal && overlayOpacity > 0 && (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: dominantColor,
+                opacity: overlayOpacity,
+              },
+            ]}
+            pointerEvents="none"
+          />
+        )}
       </View>
     </GestureDetector>
   );
@@ -149,9 +127,5 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     backgroundColor: colors.surface,
-  },
-  canvas: {
-    // Transparent so the native video renders through underneath.
-    backgroundColor: 'transparent',
   },
 });
