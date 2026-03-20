@@ -1,30 +1,25 @@
 import React, { useCallback, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import Video from 'react-native-video';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  runOnJS,
-} from 'react-native-reanimated';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 import { useEditorStore } from '../../store/useEditorStore';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
-import { getFilterById } from '../../filters';
+import { getFilterById, IDENTITY_MATRIX } from '../../filters';
 import { colors } from '../../theme';
+import AuraFilteredVideoView from './AuraFilteredVideoView';
 
 interface VideoViewportProps {
   height: number;
 }
 
 /**
- * Video viewport with a colored overlay that represents the active filter.
+ * Video viewport.
  *
- * Since Skia BackdropFilter cannot capture native Video pixels (different
- * compositor), we use a semi-transparent colored View overlay. The overlay
- * color is the filter's dominantColor at reduced opacity scaled by intensity.
- * This gives clear visual feedback when switching filters.
+ * iOS uses a native AVFoundation + Core Image pipeline that applies the
+ * selected 4x5 color matrix to every video frame in real time. Android keeps
+ * the previous overlay fallback until a native pipeline is added there too.
  *
  * Long press: temporarily hides overlay to preview original.
  * Tap: play/pause toggle.
@@ -41,6 +36,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
 
   const filter = getFilterById(activeFilterId);
   const dominantColor = filter?.dominantColor ?? '#FFFFFF';
+  const filterMatrix = filter?.colorMatrix ?? IDENTITY_MATRIX;
   const isOriginal = activeFilterId === 'original';
 
   // Overlay opacity = 0.35 * intensity for non-original filters
@@ -84,23 +80,38 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
     <GestureDetector gesture={composedGesture}>
       <View style={[styles.container, { height }]}>
         {currentVideoUri ? (
-          <Video
-            ref={videoRef}
-            source={{ uri: currentVideoUri }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-            paused={!isPlaying}
-            repeat
-            onLoad={({ duration }) => onLoad(duration)}
-            onProgress={({ currentTime }) => onProgress(currentTime)}
-            onEnd={onEnd}
-          />
+          Platform.OS === 'ios' ? (
+            <AuraFilteredVideoView
+              sourceUri={currentVideoUri}
+              style={StyleSheet.absoluteFill}
+              paused={!isPlaying}
+              repeatVideo
+              resizeMode="cover"
+              filterMatrix={filterMatrix}
+              filterIntensity={filterIntensity}
+              onLoad={(event) => onLoad(event.nativeEvent.duration)}
+              onProgress={(event) => onProgress(event.nativeEvent.currentTime)}
+              onEnd={onEnd}
+            />
+          ) : (
+            <Video
+              ref={videoRef}
+              source={{ uri: currentVideoUri }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              paused={!isPlaying}
+              repeat
+              onLoad={({ duration }) => onLoad(duration)}
+              onProgress={({ currentTime }) => onProgress(currentTime)}
+              onEnd={onEnd}
+            />
+          )
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.placeholder]} />
         )}
 
         {/* Color overlay representing the active filter */}
-        {!isOriginal && overlayOpacity > 0 && (
+        {Platform.OS !== 'ios' && !isOriginal && overlayOpacity > 0 && (
           <View
             style={[
               StyleSheet.absoluteFill,

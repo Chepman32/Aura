@@ -1,0 +1,415 @@
+import AVFoundation
+import CoreImage
+import Metal
+import Photos
+import React
+import UIKit
+
+private let identityColorMatrix: [CGFloat] = [
+  1, 0, 0, 0, 0,
+  0, 1, 0, 0, 0,
+  0, 0, 1, 0, 0,
+  0, 0, 0, 1, 0,
+]
+
+@objc(AuraFilteredVideoView)
+final class AuraFilteredVideoView: UIView {
+  @objc var sourceUri: NSString? {
+    didSet {
+      let previousValue = oldValue as String?
+      let nextValue = sourceUri as String?
+      if previousValue != nextValue {
+        configureSource()
+      }
+    }
+  }
+
+  @objc var paused = true {
+    didSet {
+      updatePlaybackState()
+    }
+  }
+
+  @objc var repeatVideo = false
+
+  @objc var resizeMode: NSString = "cover" {
+    didSet {
+      updateVideoGravity()
+    }
+  }
+
+  @objc var filterMatrix: NSArray = [] {
+    didSet {
+      updateFilterState()
+    }
+  }
+
+  @objc var filterIntensity: NSNumber = 1 {
+    didSet {
+      updateFilterState()
+    }
+  }
+
+  @objc var onLoad: RCTDirectEventBlock?
+  @objc var onProgress: RCTDirectEventBlock?
+  @objc var onEnd: RCTDirectEventBlock?
+
+  private let player = AVPlayer()
+  private let playerLayer = AVPlayerLayer()
+  private let filterStateLock = NSLock()
+  private let ciContext: CIContext = {
+    if let device = MTLCreateSystemDefaultDevice() {
+      return CIContext(mtlDevice: device)
+    }
+    return CIContext()
+  }()
+
+  private var sourceTask: Task<Void, Never>?
+  private var timeObserver: Any?
+  private var endObserver: NSObjectProtocol?
+  private var itemStatusObservation: NSKeyValueObservation?
+  private var currentMatrix = identityColorMatrix
+  private var currentIntensity: CGFloat = 1
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    commonInit()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    commonInit()
+  }
+
+  deinit {
+    sourceTask?.cancel()
+    tearDownCurrentItemObservers()
+    if let timeObserver {
+      player.removeTimeObserver(timeObserver)
+    }
+    player.replaceCurrentItem(with: nil)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    playerLayer.frame = bounds
+  }
+
+  private func commonInit() {
+    backgroundColor = .black
+    clipsToBounds = true
+
+    playerLayer.player = player
+    layer.addSublayer(playerLayer)
+
+    updateVideoGravity()
+    updateFilterState()
+    installTimeObserver()
+  }
+
+  private func installTimeObserver() {
+    let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+    timeObserver = player.addPeriodicTimeObserver(
+      forInterval: interval,
+      queue: .main
+    ) { [weak self] currentTime in
+      guard let self else { return }
+      let seconds = currentTime.seconds
+      guard seconds.isFinite else { return }
+      self.onProgress?(["currentTime": seconds])
+    }
+  }
+
+  private func configureSource() {
+    sourceTask?.cancel()
+    tearDownCurrentItemObservers()
+
+    guard let rawUri = sourceUri as String? else {
+      player.replaceCurrentItem(with: nil)
+      return
+    }
+
+    let trimmedUri = rawUri.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedUri.isEmpty else {
+      player.replaceCurrentItem(with: nil)
+      return
+    }
+
+    sourceTask = Task { [weak self] in
+      guard let self else { return }
+      guard let item = await self.preparePlayerItem(for: trimmedUri) else { return }
+      guard !Task.isCancelled else { return }
+
+      await MainActor.run {
+        guard self.sourceUri as String? == trimmedUri else { return }
+        self.attachPlayerItem(item)
+      }
+    }
+  }
+
+  private func preparePlayerItem(for uri: String) async -> AVPlayerItem? {
+    guard let asset = await loadAsset(from: uri) else {
+      return nil
+    }
+
+    let item = AVPlayerItem(asset: asset)
+    item.videoComposition = await makeVideoComposition(for: asset)
+    return item
+  }
+
+  private func loadAsset(from uri: String) async -> AVAsset? {
+    if uri.hasPrefix("ph://") {
+      return await loadPhotoLibraryAsset(from: uri)
+    }
+
+    guard let url = makeURL(from: uri) else {
+      return nil
+    }
+
+    return AVURLAsset(
+      url: url,
+      options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+    )
+  }
+
+  private func loadPhotoLibraryAsset(from uri: String) async -> AVAsset? {
+    let assetId = String(uri.dropFirst("ph://".count))
+    guard let photoAsset = PHAsset.fetchAssets(
+      withLocalIdentifiers: [assetId],
+      options: nil
+    ).firstObject else {
+      return nil
+    }
+
+    let options = PHVideoRequestOptions()
+    options.isNetworkAccessAllowed = true
+
+    return await withCheckedContinuation { continuation in
+      PHCachingImageManager().requestAVAsset(
+        forVideo: photoAsset,
+        options: options
+      ) { asset, _, _ in
+        continuation.resume(returning: asset)
+      }
+    }
+  }
+
+  private func makeURL(from uri: String) -> URL? {
+    if uri.contains("://") {
+      return URL(string: uri)
+    }
+
+    if uri.hasPrefix("/") {
+      return URL(fileURLWithPath: uri)
+    }
+
+    return URL(string: uri)
+  }
+
+  private func makeVideoComposition(for asset: AVAsset) async -> AVVideoComposition? {
+    let filterHandler: (AVAsynchronousCIImageFilteringRequest) -> Void = { [weak self] request in
+      let sourceImage = request.sourceImage.clampedToExtent()
+      guard let self else {
+        request.finish(with: request.sourceImage, context: nil)
+        return
+      }
+
+      let outputImage = self.filteredImage(for: sourceImage).cropped(to: request.sourceImage.extent)
+      request.finish(with: outputImage, context: self.ciContext)
+    }
+
+    if #available(iOS 16.0, *) {
+      return try? await AVVideoComposition.videoComposition(
+        with: asset,
+        applyingCIFiltersWithHandler: filterHandler
+      )
+    }
+
+    return AVVideoComposition(
+      asset: asset,
+      applyingCIFiltersWithHandler: filterHandler
+    )
+  }
+
+  private func filteredImage(for image: CIImage) -> CIImage {
+    let (matrix, intensity) = snapshotFilterState()
+
+    guard intensity > 0.001 else {
+      return image
+    }
+
+    let interpolated = zip(identityColorMatrix, matrix).map { identityValue, targetValue in
+      identityValue + (targetValue - identityValue) * intensity
+    }
+
+    guard let colorMatrixFilter = CIFilter(name: "CIColorMatrix") else {
+      return image
+    }
+
+    colorMatrixFilter.setValue(image, forKey: kCIInputImageKey)
+    colorMatrixFilter.setValue(
+      CIVector(
+        x: interpolated[0],
+        y: interpolated[1],
+        z: interpolated[2],
+        w: interpolated[3]
+      ),
+      forKey: "inputRVector"
+    )
+    colorMatrixFilter.setValue(
+      CIVector(
+        x: interpolated[5],
+        y: interpolated[6],
+        z: interpolated[7],
+        w: interpolated[8]
+      ),
+      forKey: "inputGVector"
+    )
+    colorMatrixFilter.setValue(
+      CIVector(
+        x: interpolated[10],
+        y: interpolated[11],
+        z: interpolated[12],
+        w: interpolated[13]
+      ),
+      forKey: "inputBVector"
+    )
+    colorMatrixFilter.setValue(
+      CIVector(
+        x: interpolated[15],
+        y: interpolated[16],
+        z: interpolated[17],
+        w: interpolated[18]
+      ),
+      forKey: "inputAVector"
+    )
+    colorMatrixFilter.setValue(
+      CIVector(
+        x: interpolated[4],
+        y: interpolated[9],
+        z: interpolated[14],
+        w: interpolated[19]
+      ),
+      forKey: "inputBiasVector"
+    )
+
+    let matrixOutput = colorMatrixFilter.outputImage ?? image
+
+    guard let clampFilter = CIFilter(name: "CIColorClamp") else {
+      return matrixOutput
+    }
+
+    clampFilter.setValue(matrixOutput, forKey: kCIInputImageKey)
+    clampFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputMinComponents")
+    clampFilter.setValue(CIVector(x: 1, y: 1, z: 1, w: 1), forKey: "inputMaxComponents")
+
+    return clampFilter.outputImage ?? matrixOutput
+  }
+
+  private func updateFilterState() {
+    let matrixValues = (filterMatrix as? [NSNumber])?.map { CGFloat(truncating: $0) } ?? []
+    let nextMatrix = matrixValues.count == identityColorMatrix.count ? matrixValues : identityColorMatrix
+    let nextIntensity = max(0, min(CGFloat(truncating: filterIntensity), 1))
+
+    filterStateLock.lock()
+    currentMatrix = nextMatrix
+    currentIntensity = nextIntensity
+    filterStateLock.unlock()
+  }
+
+  private func snapshotFilterState() -> (matrix: [CGFloat], intensity: CGFloat) {
+    filterStateLock.lock()
+    let matrix = currentMatrix
+    let intensity = currentIntensity
+    filterStateLock.unlock()
+    return (matrix, intensity)
+  }
+
+  private func attachPlayerItem(_ item: AVPlayerItem) {
+    tearDownCurrentItemObservers()
+    player.replaceCurrentItem(with: item)
+    observeCurrentItem(item)
+    updatePlaybackState()
+  }
+
+  private func observeCurrentItem(_ item: AVPlayerItem) {
+    itemStatusObservation = item.observe(
+      \.status,
+      options: [.initial, .new]
+    ) { [weak self] observedItem, _ in
+      guard let self else { return }
+      guard observedItem.status == .readyToPlay else { return }
+
+      let duration = observedItem.duration.seconds.isFinite ? observedItem.duration.seconds : 0
+      DispatchQueue.main.async {
+        self.onLoad?(["duration": duration])
+        self.updatePlaybackState()
+      }
+    }
+
+    endObserver = NotificationCenter.default.addObserver(
+      forName: .AVPlayerItemDidPlayToEndTime,
+      object: item,
+      queue: .main
+    ) { [weak self] _ in
+      self?.handlePlaybackEnded()
+    }
+  }
+
+  private func tearDownCurrentItemObservers() {
+    itemStatusObservation?.invalidate()
+    itemStatusObservation = nil
+
+    if let endObserver {
+      NotificationCenter.default.removeObserver(endObserver)
+      self.endObserver = nil
+    }
+  }
+
+  private func handlePlaybackEnded() {
+    if repeatVideo {
+      player.seek(to: .zero)
+      if !paused {
+        player.play()
+      }
+      return
+    }
+
+    player.pause()
+    player.seek(to: .zero)
+    onProgress?(["currentTime": 0])
+    onEnd?([:])
+  }
+
+  private func updatePlaybackState() {
+    guard player.currentItem != nil else { return }
+
+    if paused {
+      player.pause()
+    } else {
+      player.play()
+    }
+  }
+
+  private func updateVideoGravity() {
+    switch resizeMode as String {
+    case "contain":
+      playerLayer.videoGravity = .resizeAspect
+    case "stretch":
+      playerLayer.videoGravity = .resize
+    default:
+      playerLayer.videoGravity = .resizeAspectFill
+    }
+  }
+}
+
+@objc(AuraFilteredVideoViewManager)
+final class AuraFilteredVideoViewManager: RCTViewManager {
+  override static func requiresMainQueueSetup() -> Bool {
+    true
+  }
+
+  override func view() -> UIView! {
+    AuraFilteredVideoView()
+  }
+}
