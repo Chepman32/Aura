@@ -274,6 +274,8 @@ final class AuraFilteredVideoView: UIView {
       return applySketchFilter(to: image, intensity: intensity)
     case "noir":
       return applyNoirFilter(to: image, intensity: intensity)
+    case "vhs":
+      return applyVHSFilter(to: image, intensity: intensity, time: time)
     default:
       return applyColorMatrixFilter(to: image, matrix: matrix, intensity: intensity)
     }
@@ -688,6 +690,121 @@ final class AuraFilteredVideoView: UIView {
     .cropped(to: image.extent)
 
     return blendFilteredImage(image, with: vintageImage, intensity: clampedIntensity)
+  }
+
+  private func applyVHSFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+    let extent = image.extent
+
+    // 1. Colour grade: washed-out, slightly warm, low contrast like a worn tape
+    let graded = image
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0.55 + clampedIntensity * 0.15,
+        kCIInputContrastKey:   0.82,
+        kCIInputBrightnessKey: 0.02,
+      ])
+      .applyingFilter("CITemperatureAndTint", parameters: [
+        "inputNeutral":       CIVector(x: 6500, y: 0),
+        "inputTargetNeutral": CIVector(x: 5800, y: 12),
+      ])
+
+    // 2. Chroma bleed: shift the red channel right and blue channel left
+    let redShift   = CGFloat(2.5 + sin(time * 7.3) * 0.8) * clampedIntensity
+    let blueShift  = CGFloat(-1.8 + cos(time * 5.1) * 0.6) * clampedIntensity
+
+    let redLayer = graded
+      .transformed(by: CGAffineTransform(translationX: redShift, y: 0))
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+        "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+      ])
+      .cropped(to: extent)
+
+    let blueLayer = graded
+      .transformed(by: CGAffineTransform(translationX: blueShift, y: 0))
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: 0, y: 0, z: 1, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+        "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+      ])
+      .cropped(to: extent)
+
+    let greenLayer = graded
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+        "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+        "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+      ])
+      .cropped(to: extent)
+
+    // Recombine channels via screen blend
+    let chromaImage = redLayer
+      .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: greenLayer])
+      .applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: blueLayer])
+      .cropped(to: extent)
+
+    // 3. Scanlines: tile a 4px stripe (1px dark + 3px clear) across the frame — no UIKit, thread-safe
+    let stripeUnit = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0.22 * clampedIntensity))
+      .cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+      .applyingFilter("CIAffineClamp", parameters: [kCIInputTransformKey: CGAffineTransform.identity])
+
+    let tiled = stripeUnit
+      .applyingFilter("CIAffineTile", parameters: [
+        kCIInputTransformKey: CGAffineTransform(scaleX: extent.width, y: 4),
+      ])
+      .cropped(to: extent)
+
+    let scanned = tiled
+      .applyingFilter("CISourceOverCompositing", parameters: [
+        kCIInputBackgroundImageKey: chromaImage,
+      ])
+      .cropped(to: extent)
+
+    // 4. Horizontal tracking glitch: random-ish band that shifts rows sideways
+    let glitchY      = extent.minY + extent.height * CGFloat(fmod(time * 0.37, 1.0))
+    let glitchHeight = extent.height * 0.04
+    let glitchShift  = CGFloat(sin(time * 23.0) * 6.0) * clampedIntensity
+
+    let glitchBand = scanned
+      .cropped(to: CGRect(x: extent.minX, y: glitchY, width: extent.width, height: glitchHeight))
+      .transformed(by: CGAffineTransform(translationX: glitchShift, y: 0))
+      .cropped(to: CGRect(x: extent.minX, y: glitchY, width: extent.width, height: glitchHeight))
+
+    let withGlitch = glitchBand
+      .applyingFilter("CISourceOverCompositing", parameters: [kCIInputBackgroundImageKey: scanned])
+      .cropped(to: extent)
+
+    // 5. Luminance noise (tape hiss)
+    guard let noise = CIFilter(name: "CIRandomGenerator")?.outputImage else {
+      return blendFilteredImage(image, with: withGlitch, intensity: clampedIntensity)
+    }
+
+    let luma = noise
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.15,
+        kCIInputContrastKey:   1.8,
+      ])
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 0.06, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 0, y: 0.06, z: 0, w: 0),
+        "inputBVector": CIVector(x: 0, y: 0, z: 0.06, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.12 * clampedIntensity),
+        "inputBiasVector": CIVector(x: 0.47, y: 0.47, z: 0.47, w: 0),
+      ])
+
+    let vhsImage = withGlitch
+      .applyingFilter("CIOverlayBlendMode", parameters: [kCIInputBackgroundImageKey: luma])
+      .cropped(to: extent)
+
+    return blendFilteredImage(image, with: vhsImage, intensity: clampedIntensity)
   }
 
   private func applyNoirFilter(to image: CIImage, intensity: CGFloat) -> CIImage {

@@ -80,6 +80,13 @@ export const FILTERS: Filter[] = [
     colorMatrix: COLOR_MATRICES.sketch,
     lutFile: null,
   },
+  {
+    id: 'vhs',
+    name: 'VHS',
+    dominantColor: '#A0522D',
+    colorMatrix: COLOR_MATRICES.vhs,
+    lutFile: null,
+  },
 ];
 
 // ---------------------------------------------------------------------------

@@ -139,6 +139,16 @@ export const COLOR_MATRICES: Record<string, number[]> = {
   ],
 
   /**
+   * vhs — washed-out colour grade fallback for non-native paths.
+   */
+  vhs: [
+    0.60, 0.30, 0.10, 0, 0.02,
+    0.10, 0.70, 0.20, 0, 0.01,
+    0.10, 0.20, 0.60, 0, -0.01,
+    0,    0,    0,    1,  0,
+  ],
+
+  /**
    * sketch — grayscale fallback approximation for non-native preview paths.
    * The real iOS preview uses a native Core Image line-art recipe.
    */
