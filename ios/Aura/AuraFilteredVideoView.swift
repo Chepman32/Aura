@@ -568,20 +568,21 @@ final class AuraFilteredVideoView: UIView {
           kCIInputSaturationKey: 0,
         ]
       )
-
-    // Vignette for dramatic framing
-    let vignetted = noirBase.applyingFilter(
-      "CIVignette",
-      parameters: [
-        kCIInputIntensityKey: 0.5 + clampedIntensity * 0.4,
-        kCIInputRadiusKey: 1.2 + clampedIntensity * 0.5,
-      ]
-    ).cropped(to: image.extent)
-
-    // Subtle grain for film texture
-    let randomNoise = CIFilter(name: "CIRandomGenerator")?.outputImage ?? image
-    let grain = randomNoise
+      .applyingFilter(
+        "CIVignette",
+        parameters: [
+          kCIInputIntensityKey: 0.5 + clampedIntensity * 0.4,
+          kCIInputRadiusKey: 1.2 + clampedIntensity * 0.5,
+        ]
+      )
       .cropped(to: image.extent)
+
+    // Grain: CIRandomGenerator has infinite extent — clamp AFTER the full pipeline
+    guard let randomNoise = CIFilter(name: "CIRandomGenerator")?.outputImage else {
+      return blendFilteredImage(image, with: noirBase, intensity: clampedIntensity)
+    }
+
+    let grain = randomNoise
       .applyingFilter(
         "CIColorControls",
         parameters: [
@@ -600,11 +601,11 @@ final class AuraFilteredVideoView: UIView {
           "inputBiasVector": CIVector(x: 0.46, y: 0.46, z: 0.46, w: 0),
         ]
       )
-      .cropped(to: image.extent)
 
-    let noirImage = grain.applyingFilter(
+    // noirBase is the background; grain overlays on top
+    let noirImage = noirBase.applyingFilter(
       "CIOverlayBlendMode",
-      parameters: [kCIInputBackgroundImageKey: vignetted]
+      parameters: [kCIInputBackgroundImageKey: grain]
     ).cropped(to: image.extent)
 
     return blendFilteredImage(image, with: noirImage, intensity: clampedIntensity)
