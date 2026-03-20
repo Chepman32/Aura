@@ -20,6 +20,7 @@ export interface AuraFilteredVideoViewProps extends ViewProps {
   paused: boolean;
   repeatVideo?: boolean;
   resizeMode?: 'cover' | 'contain' | 'stretch';
+  filterId: string;
   filterMatrix: ReadonlyArray<number>;
   filterMatrixPayload?: string;
   filterIntensity: number;

@@ -38,6 +38,12 @@ final class AuraFilteredVideoView: UIView {
     }
   }
 
+  @objc var filterId: NSString = "original" {
+    didSet {
+      updateFilterState()
+    }
+  }
+
   @objc var filterMatrix: NSArray = [] {
     didSet {
       updateFilterState()
@@ -74,6 +80,7 @@ final class AuraFilteredVideoView: UIView {
   private var timeObserver: Any?
   private var endObserver: NSObjectProtocol?
   private var itemStatusObservation: NSKeyValueObservation?
+  private var currentFilterId = "original"
   private var currentMatrix = identityColorMatrix
   private var currentIntensity: CGFloat = 1
   private var scheduledFrameRefresh: DispatchWorkItem?
@@ -235,12 +242,25 @@ final class AuraFilteredVideoView: UIView {
   }
 
   private func filteredImage(for image: CIImage) -> CIImage {
-    let (matrix, intensity) = snapshotFilterState()
+    let (filterId, matrix, intensity) = snapshotFilterState()
 
     guard intensity > 0.001 else {
       return image
     }
 
+    switch filterId {
+    case "sketch":
+      return applySketchFilter(to: image, intensity: intensity)
+    default:
+      return applyColorMatrixFilter(to: image, matrix: matrix, intensity: intensity)
+    }
+  }
+
+  private func applyColorMatrixFilter(
+    to image: CIImage,
+    matrix: [CGFloat],
+    intensity: CGFloat
+  ) -> CIImage {
     let interpolated = zip(identityColorMatrix, matrix).map { identityValue, targetValue in
       identityValue + (targetValue - identityValue) * intensity
     }
@@ -309,14 +329,49 @@ final class AuraFilteredVideoView: UIView {
     return clampFilter.outputImage ?? matrixOutput
   }
 
+  private func applySketchFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+
+    let monochrome = CIFilter(name: "CIColorControls")
+    monochrome?.setValue(image, forKey: kCIInputImageKey)
+    monochrome?.setValue(0, forKey: kCIInputSaturationKey)
+    monochrome?.setValue(0.02 + clampedIntensity * 0.06, forKey: kCIInputBrightnessKey)
+    monochrome?.setValue(1.0 + clampedIntensity * 1.2, forKey: kCIInputContrastKey)
+
+    let grayscaleImage = monochrome?.outputImage ?? image
+
+    guard let lineOverlay = CIFilter(name: "CILineOverlay") else {
+      return grayscaleImage
+    }
+
+    lineOverlay.setValue(grayscaleImage, forKey: kCIInputImageKey)
+    lineOverlay.setValue(0.08 - clampedIntensity * 0.05, forKey: "inputNRNoiseLevel")
+    lineOverlay.setValue(0.70 + clampedIntensity * 0.60, forKey: "inputNRSharpness")
+    lineOverlay.setValue(1.50 + clampedIntensity * 40.0, forKey: "inputEdgeIntensity")
+    lineOverlay.setValue(0.10 + (1.0 - clampedIntensity) * 0.15, forKey: "inputThreshold")
+    lineOverlay.setValue(35.0 + clampedIntensity * 45.0, forKey: "inputContrast")
+
+    let sketchImage = lineOverlay.outputImage ?? grayscaleImage
+
+    guard clampedIntensity < 0.999, let dissolve = CIFilter(name: "CIDissolveTransition") else {
+      return sketchImage
+    }
+
+    dissolve.setValue(image, forKey: kCIInputImageKey)
+    dissolve.setValue(sketchImage, forKey: "inputTargetImage")
+    dissolve.setValue(clampedIntensity, forKey: kCIInputTimeKey)
+    return dissolve.outputImage ?? sketchImage
+  }
+
   private func updateFilterState() {
+    let nextFilterId = (filterId as String).trimmingCharacters(in: .whitespacesAndNewlines)
     let matrixValues = parseFilterMatrixPayload() ?? filterMatrix.compactMap { value -> CGFloat? in
       if let number = value as? NSNumber {
         return CGFloat(truncating: number)
       }
 
       if let double = value as? Double {
-        return double
+        return CGFloat(double)
       }
 
       return nil
@@ -325,6 +380,7 @@ final class AuraFilteredVideoView: UIView {
     let nextIntensity = max(0, min(CGFloat(truncating: filterIntensity), 1))
 
     filterStateLock.lock()
+    currentFilterId = nextFilterId.isEmpty ? "original" : nextFilterId
     currentMatrix = nextMatrix
     currentIntensity = nextIntensity
     filterStateLock.unlock()
@@ -349,12 +405,13 @@ final class AuraFilteredVideoView: UIView {
     return values
   }
 
-  private func snapshotFilterState() -> (matrix: [CGFloat], intensity: CGFloat) {
+  private func snapshotFilterState() -> (filterId: String, matrix: [CGFloat], intensity: CGFloat) {
     filterStateLock.lock()
+    let filterId = currentFilterId
     let matrix = currentMatrix
     let intensity = currentIntensity
     filterStateLock.unlock()
-    return (matrix, intensity)
+    return (filterId, matrix, intensity)
   }
 
   private func scheduleFilterRefreshIfNeeded() {
@@ -393,8 +450,12 @@ final class AuraFilteredVideoView: UIView {
 
     guard let item = player.currentItem, item.status == .readyToPlay else { return }
     item.videoComposition = makeVideoComposition(for: item.asset)
+    refreshCurrentFrameIfPaused()
+  }
 
+  private func refreshCurrentFrameIfPaused() {
     guard paused else { return }
+    guard let item = player.currentItem, item.status == .readyToPlay else { return }
 
     if isRefreshingCurrentFrame {
       needsAnotherFrameRefresh = true
@@ -415,7 +476,7 @@ final class AuraFilteredVideoView: UIView {
 
       if self.needsAnotherFrameRefresh {
         self.needsAnotherFrameRefresh = false
-        self.scheduleFilterRefreshIfNeededOnMain()
+        self.refreshCurrentFrameIfPaused()
       }
     }
   }
@@ -439,6 +500,7 @@ final class AuraFilteredVideoView: UIView {
       DispatchQueue.main.async {
         self.onLoad?(["duration": duration])
         self.updatePlaybackState()
+        self.refreshCurrentFrameIfPaused()
       }
     }
 
@@ -463,17 +525,23 @@ final class AuraFilteredVideoView: UIView {
 
   private func handlePlaybackEnded() {
     if repeatVideo {
-      player.seek(to: .zero)
-      if !paused {
-        player.play()
+      player.seek(to: .zero) { [weak self] _ in
+        guard let self else { return }
+        self.refreshCurrentFrameIfPaused()
+        if !self.paused {
+          self.player.play()
+        }
       }
       return
     }
 
     player.pause()
-    player.seek(to: .zero)
-    onProgress?(["currentTime": 0])
-    onEnd?([:])
+    player.seek(to: .zero) { [weak self] _ in
+      guard let self else { return }
+      self.refreshCurrentFrameIfPaused()
+      self.onProgress?(["currentTime": 0])
+      self.onEnd?([:])
+    }
   }
 
   private func updatePlaybackState() {
@@ -481,6 +549,7 @@ final class AuraFilteredVideoView: UIView {
 
     if paused {
       player.pause()
+      refreshCurrentFrameIfPaused()
     } else {
       player.play()
     }

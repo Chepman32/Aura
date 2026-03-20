@@ -73,6 +73,13 @@ export const FILTERS: Filter[] = [
     colorMatrix: COLOR_MATRICES.bleach,
     lutFile: 'bleach.cube',
   },
+  {
+    id: 'sketch',
+    name: 'Sketch',
+    dominantColor: '#E8E8E8',
+    colorMatrix: COLOR_MATRICES.sketch,
+    lutFile: null,
+  },
 ];
 
 // ---------------------------------------------------------------------------

@@ -17,10 +17,9 @@ interface VideoViewportProps {
 /**
  * Video viewport.
  *
- * iOS attempts a native AVFoundation + Core Image pipeline for real-time
- * matrix filtering. A dominant-color overlay is rendered on both platforms as
- * the immediate visual preview layer so filter changes remain visible even
- * while the native pipeline catches up.
+ * iOS uses a native AVFoundation + Core Image pipeline for real-time filtered
+ * preview frames. Android keeps the temporary overlay fallback until a
+ * matching native pipeline is added there too.
  *
  * Long press: temporarily hides overlay to preview original.
  * Tap: play/pause toggle.
@@ -88,6 +87,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
               paused={!isPlaying}
               repeatVideo
               resizeMode="cover"
+              filterId={activeFilterId}
               filterMatrix={filterMatrix}
               filterMatrixPayload={filterMatrix.join(',')}
               filterIntensity={filterIntensity}
@@ -112,8 +112,8 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
           <View style={[StyleSheet.absoluteFill, styles.placeholder]} />
         )}
 
-        {/* Immediate preview overlay representing the active filter */}
-        {!isOriginal && overlayOpacity > 0 && (
+        {/* Temporary Android-only preview overlay */}
+        {Platform.OS !== 'ios' && !isOriginal && overlayOpacity > 0 && (
           <View
             style={[
               StyleSheet.absoluteFill,

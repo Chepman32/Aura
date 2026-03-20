@@ -137,6 +137,17 @@ export const COLOR_MATRICES: Record<string, number[]> = {
     0.107, 0.286, 0.786, 0, -0.03,
     0,     0,     0,     1,  0,
   ],
+
+  /**
+   * sketch — grayscale fallback approximation for non-native preview paths.
+   * The real iOS preview uses a native Core Image line-art recipe.
+   */
+  sketch: [
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0,      0,      0,      1, 0,
+  ],
 };
 
 // ---------------------------------------------------------------------------
