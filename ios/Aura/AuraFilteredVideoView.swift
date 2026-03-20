@@ -332,26 +332,43 @@ final class AuraFilteredVideoView: UIView {
   private func applySketchFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
     let clampedIntensity = max(0, min(intensity, 1))
 
-    let monochrome = CIFilter(name: "CIColorControls")
-    monochrome?.setValue(image, forKey: kCIInputImageKey)
-    monochrome?.setValue(0, forKey: kCIInputSaturationKey)
-    monochrome?.setValue(0.02 + clampedIntensity * 0.06, forKey: kCIInputBrightnessKey)
-    monochrome?.setValue(1.0 + clampedIntensity * 1.2, forKey: kCIInputContrastKey)
+    let grayscale = CIFilter(name: "CIColorControls")
+    grayscale?.setValue(image, forKey: kCIInputImageKey)
+    grayscale?.setValue(0, forKey: kCIInputSaturationKey)
+    grayscale?.setValue(0.02 + clampedIntensity * 0.04, forKey: kCIInputBrightnessKey)
+    grayscale?.setValue(1.0 + clampedIntensity * 0.5, forKey: kCIInputContrastKey)
 
-    let grayscaleImage = monochrome?.outputImage ?? image
+    let grayscaleImage = grayscale?.outputImage ?? image
 
-    guard let lineOverlay = CIFilter(name: "CILineOverlay") else {
-      return grayscaleImage
-    }
+    let inverted = grayscaleImage.applyingFilter("CIColorInvert")
+    let blurRadius = 6.0 + clampedIntensity * 10.0
+    let blurredInverted = inverted
+      .clampedToExtent()
+      .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: blurRadius])
+      .cropped(to: image.extent)
 
-    lineOverlay.setValue(grayscaleImage, forKey: kCIInputImageKey)
-    lineOverlay.setValue(0.08 - clampedIntensity * 0.05, forKey: "inputNRNoiseLevel")
-    lineOverlay.setValue(0.70 + clampedIntensity * 0.60, forKey: "inputNRSharpness")
-    lineOverlay.setValue(1.50 + clampedIntensity * 40.0, forKey: "inputEdgeIntensity")
-    lineOverlay.setValue(0.10 + (1.0 - clampedIntensity) * 0.15, forKey: "inputThreshold")
-    lineOverlay.setValue(35.0 + clampedIntensity * 45.0, forKey: "inputContrast")
+    let dodged = blurredInverted.applyingFilter(
+      "CIColorDodgeBlendMode",
+      parameters: [kCIInputBackgroundImageKey: grayscaleImage]
+    )
 
-    let sketchImage = lineOverlay.outputImage ?? grayscaleImage
+    let edges = grayscaleImage
+      .applyingFilter("CIEdges", parameters: [kCIInputIntensityKey: 1.5 + clampedIntensity * 4.0])
+      .applyingFilter("CIColorInvert")
+
+    let sketchImage = dodged.applyingFilter(
+      "CIMultiplyCompositing",
+      parameters: [kCIInputBackgroundImageKey: edges]
+    )
+    .applyingFilter(
+      "CIColorControls",
+      parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: 0.02,
+        kCIInputContrastKey: 1.1 + clampedIntensity * 0.5,
+      ]
+    )
+    .cropped(to: image.extent)
 
     guard clampedIntensity < 0.999, let dissolve = CIFilter(name: "CIDissolveTransition") else {
       return sketchImage
@@ -360,7 +377,7 @@ final class AuraFilteredVideoView: UIView {
     dissolve.setValue(image, forKey: kCIInputImageKey)
     dissolve.setValue(sketchImage, forKey: "inputTargetImage")
     dissolve.setValue(clampedIntensity, forKey: kCIInputTimeKey)
-    return dissolve.outputImage ?? sketchImage
+    return dissolve.outputImage?.cropped(to: image.extent) ?? sketchImage
   }
 
   private func updateFilterState() {
