@@ -300,7 +300,7 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
           styles.container,
           slideStyle,
           {
-            paddingTop: insets.top + spacing.sm,
+            paddingTop: spacing.sm,
             paddingBottom: insets.bottom + spacing.xl,
           },
         ]}
@@ -331,7 +331,7 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
             )}
           </View>
 
-          {!isError && (
+          {!isError && !isComplete && (
             <Text style={[styles.statusLabel, isComplete && styles.doneLabel]}>
               {statusLabel}
             </Text>
@@ -411,7 +411,7 @@ const createStyles = (theme: AppTheme) => {
       height: 4,
       borderRadius: 2,
       backgroundColor: colors.border,
-      marginBottom: spacing.sm,
+      marginBottom: spacing.md,
     },
     headerTitle: {
       ...typography.title,
