@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
-  Pressable,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -18,6 +16,7 @@ import {
 } from 'react-native-gesture-handler';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getFilterById } from '../filters';
 import { executeExport, cancelExport } from '../services/ffmpeg';
@@ -76,6 +75,7 @@ function toCameraRollUri(path: string): string {
 // ---------------------------------------------------------------------------
 
 export default function ExportScreen({ route, navigation }: Props): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const colors = theme.colors;
@@ -122,6 +122,16 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
     navigation.goBack();
   }, [reset, navigation]);
 
+  const dismissScreen = useCallback(() => {
+    if (phase === 'exporting' || phase === 'saving') {
+      cancelExport().catch(() => {});
+      cancelExportStore();
+    } else {
+      reset();
+    }
+    navigation.goBack();
+  }, [cancelExportStore, navigation, phase, reset]);
+
   const panGesture = Gesture.Pan()
     .onStart(() => {
       // No setup needed; translationY is relative to the gesture start.
@@ -136,10 +146,10 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
     .onEnd((event) => {
       const drag = Math.max(0, event.translationY);
       if (drag > SCREEN_HEIGHT * CANCEL_THRESHOLD) {
-        // Animate off-screen then cancel.
+        // Animate the full screen off-canvas, then dismiss.
         translateY.value = withSpring(SCREEN_HEIGHT, SPRING_STIFF, (finished) => {
           if (finished) {
-            runOnJS(handleCancel)();
+            runOnJS(dismissScreen)();
           }
         });
       } else {
@@ -285,93 +295,93 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
 
   return (
     <GestureDetector gesture={panGesture}>
-      <Animated.View style={[styles.container, slideStyle]}>
-        {/* ----------------------------------------------------------------
-            Tap-anywhere-to-dismiss overlay (only active after completion).
-        ---------------------------------------------------------------- */}
-        {isComplete && (
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={dismissAfterComplete}
-            accessibilityLabel="Dismiss export screen"
-          />
-        )}
+      <Animated.View
+        style={[
+          styles.container,
+          slideStyle,
+          {
+            paddingTop: insets.top + spacing.sm,
+            paddingBottom: insets.bottom + spacing.xl,
+          },
+        ]}
+      >
+        <View style={styles.header}>
+          <View style={styles.dragHandle} pointerEvents="none" />
+          <Text style={styles.headerTitle}>Export</Text>
+        </View>
 
-        {/* ----------------------------------------------------------------
-            Visual: particle layer + ring/burst, stacked in the center zone.
-        ---------------------------------------------------------------- */}
-        <View style={styles.visualArea}>
-          {/* Particles float behind the ring */}
-          <ParticleEffect
-            progress={progress}
-            dominantColor={dominantColor}
-            active={isExporting}
-          />
-
-          {/* Ring during export / burst on completion */}
-          {!isComplete ? (
-            <ProgressRing
+        <View style={styles.content}>
+          <View style={styles.visualArea}>
+            <ParticleEffect
               progress={progress}
               dominantColor={dominantColor}
+              active={isExporting}
             />
-          ) : (
-            <CompletionBurst
-              triggered={isComplete}
-              dominantColor={dominantColor}
-            />
+
+            {!isComplete ? (
+              <ProgressRing
+                progress={progress}
+                dominantColor={dominantColor}
+              />
+            ) : (
+              <CompletionBurst
+                triggered={isComplete}
+                dominantColor={dominantColor}
+              />
+            )}
+          </View>
+
+          {!isError && (
+            <Text style={[styles.statusLabel, isComplete && styles.doneLabel]}>
+              {statusLabel}
+            </Text>
+          )}
+
+          {isError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorTitle}>Export Failed</Text>
+              <Text style={styles.errorMessage} numberOfLines={3}>
+                {errorMessage}
+              </Text>
+              <AnimatedPressable
+                style={styles.retryButton}
+                onPress={handleRetry}
+                accessibilityLabel="Retry export"
+                accessibilityRole="button"
+              >
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </AnimatedPressable>
+            </View>
           )}
         </View>
 
-        {/* ----------------------------------------------------------------
-            Status label.
-        ---------------------------------------------------------------- */}
-        {!isError && (
-          <Text style={[styles.statusLabel, isComplete && styles.doneLabel]}>
-            {statusLabel}
-          </Text>
-        )}
-
-        {/* ----------------------------------------------------------------
-            Error state.
-        ---------------------------------------------------------------- */}
-        {isError && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorTitle}>Export Failed</Text>
-            <Text style={styles.errorMessage} numberOfLines={3}>
-              {errorMessage}
-            </Text>
-            <AnimatedPressable
-              style={styles.retryButton}
-              onPress={handleRetry}
-              accessibilityLabel="Retry export"
-              accessibilityRole="button"
-            >
-              <Text style={styles.retryButtonText}>Try Again</Text>
-            </AnimatedPressable>
-          </View>
-        )}
-
-        {/* ----------------------------------------------------------------
-            Cancel button — only shown during active export.
-        ---------------------------------------------------------------- */}
         {isExporting && (
-          <View style={styles.cancelArea}>
+          <View style={styles.actionArea}>
             <AnimatedPressable
-              style={styles.cancelButton}
+              style={styles.secondaryButton}
               onPress={handleCancel}
               accessibilityLabel="Cancel export"
               accessibilityRole="button"
               pressedScale={0.92}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={styles.secondaryButtonText}>Cancel</Text>
             </AnimatedPressable>
           </View>
         )}
 
-        {/* ----------------------------------------------------------------
-            Swipe hint — a small drag handle at the very top.
-        ---------------------------------------------------------------- */}
-        <View style={styles.dragHandle} pointerEvents="none" />
+        {isComplete && (
+          <View style={styles.actionArea}>
+            <AnimatedPressable
+              style={styles.primaryButton}
+              onPress={dismissAfterComplete}
+              accessibilityLabel="Done"
+              accessibilityRole="button"
+              pressedScale={0.92}
+            >
+              <Text style={styles.primaryButtonText}>Done</Text>
+            </AnimatedPressable>
+          </View>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -388,6 +398,30 @@ const createStyles = (theme: AppTheme) => {
     container: {
       flex: 1,
       backgroundColor: colors.background,
+      alignItems: 'center',
+    },
+    header: {
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      width: '100%',
+      marginBottom: spacing.lg,
+    },
+    dragHandle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+      marginBottom: spacing.sm,
+    },
+    headerTitle: {
+      ...typography.title,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
+    content: {
+      flex: 1,
+      width: '100%',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -434,28 +468,34 @@ const createStyles = (theme: AppTheme) => {
       ...typography.bodyMedium,
       color: colors.accentForeground,
     },
-    cancelArea: {
-      position: 'absolute',
-      bottom: spacing.xxl,
+    actionArea: {
+      width: '100%',
       alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: spacing.lg,
     },
-    cancelButton: {
+    secondaryButton: {
       paddingHorizontal: spacing.xxl,
       paddingVertical: spacing.md,
       borderRadius: 24,
       backgroundColor: colors.surfaceLight,
     },
-    cancelText: {
+    secondaryButtonText: {
       ...typography.bodyMedium,
       color: colors.textSecondary,
     },
-    dragHandle: {
-      position: 'absolute',
-      top: spacing.sm,
-      width: 36,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.border,
+    primaryButton: {
+      minWidth: 152,
+      paddingHorizontal: spacing.xxl,
+      paddingVertical: spacing.md,
+      borderRadius: 24,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    primaryButtonText: {
+      ...typography.bodyMedium,
+      color: colors.accentForeground,
     },
   };
 };

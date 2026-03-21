@@ -8,6 +8,7 @@ import HomeScreen from '../../screens/HomeScreen';
 import EditorScreen from '../../screens/EditorScreen';
 import ExportScreen from '../../screens/ExportScreen';
 import SettingsScreen from '../../screens/SettingsScreen';
+import DesignCodeScreen from '../../screens/DesignCodeScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -17,7 +18,7 @@ export default function RootNavigator(): React.JSX.Element {
 
   return (
     <Stack.Navigator
-      initialRouteName="Splash"
+      initialRouteName="DesignCode"
       screenOptions={{
         contentStyle: { backgroundColor: colors.background },
         headerStyle: { backgroundColor: colors.background },
@@ -25,6 +26,11 @@ export default function RootNavigator(): React.JSX.Element {
         headerShadowVisible: false,
       }}
     >
+      <Stack.Screen
+        name="DesignCode"
+        component={DesignCodeScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="Splash"
         component={SplashScreen}
@@ -46,11 +52,8 @@ export default function RootNavigator(): React.JSX.Element {
         name="Export"
         component={ExportScreen}
         options={{
-          headerShown: true,
-          title: 'Export',
+          headerShown: false,
           presentation: 'modal',
-          // Default react-navigation back button on modal.
-          headerBackVisible: true,
         }}
       />
       <Stack.Screen
