@@ -246,6 +246,27 @@ final class AuraFilteredVideoView: UIView {
   }
 
   private func makeVideoComposition(for asset: AVAsset) -> AVVideoComposition {
+    let filterState = snapshotFilterState()
+    return makeVideoComposition(
+      for: asset,
+      filterId: filterState.filterId,
+      matrix: filterState.matrix,
+      intensity: filterState.intensity
+    )
+  }
+
+  private func makeVideoComposition(
+    for asset: AVAsset,
+    filterId: String,
+    matrix: [CGFloat],
+    intensity: CGFloat
+  ) -> AVVideoComposition {
+    let resolvedFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? "original"
+      : filterId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedMatrix = matrix.count == identityColorMatrix.count ? matrix : identityColorMatrix
+    let resolvedIntensity = max(0, min(intensity, 1))
+
     let filterHandler: (AVAsynchronousCIImageFilteringRequest) -> Void = { [weak self] request in
       let sourceImage = request.sourceImage.clampedToExtent()
       let compositionTime = request.compositionTime.seconds
@@ -255,7 +276,13 @@ final class AuraFilteredVideoView: UIView {
         return
       }
 
-      let outputImage = self.filteredImage(for: sourceImage, time: time).cropped(to: request.sourceImage.extent)
+      let outputImage = self.filteredImage(
+        for: sourceImage,
+        time: time,
+        filterId: resolvedFilterId,
+        matrix: resolvedMatrix,
+        intensity: resolvedIntensity
+      ).cropped(to: request.sourceImage.extent)
       request.finish(with: outputImage, context: self.ciContext)
     }
 
@@ -1669,7 +1696,67 @@ private enum AuraProjectPreviewError: LocalizedError {
   }
 }
 
+enum AuraVideoExportError: LocalizedError {
+  case assetUnavailable
+  case exportSessionUnavailable
+  case unsupportedFileType
+  case exportCancelled
+  case exportFailed(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .assetUnavailable:
+      return "The source video could not be loaded."
+    case .exportSessionUnavailable:
+      return "Aura could not start the export session."
+    case .unsupportedFileType:
+      return "Aura could not prepare an exportable video format."
+    case .exportCancelled:
+      return "Export cancelled."
+    case let .exportFailed(message):
+      return message
+    }
+  }
+}
+
 extension AuraFilteredVideoView {
+  func makeExportSession(
+    sourceUri: String,
+    filterId: String,
+    filterMatrixPayload: String,
+    filterIntensity: CGFloat
+  ) async throws -> (session: AVAssetExportSession, outputURL: URL) {
+    let exportFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let exportMatrix = parseFilterMatrixPayload(filterMatrixPayload) ?? identityColorMatrix
+    let exportIntensity = max(0, min(filterIntensity, 1))
+
+    guard let asset = await loadAsset(from: sourceUri) else {
+      throw AuraVideoExportError.assetUnavailable
+    }
+
+    guard let exportSession = AVAssetExportSession(
+      asset: asset,
+      presetName: AVAssetExportPresetHighestQuality
+    ) else {
+      throw AuraVideoExportError.exportSessionUnavailable
+    }
+
+    let outputFileType = try preferredExportFileType(for: exportSession)
+    let outputURL = makeTemporaryExportURL(fileType: outputFileType)
+
+    exportSession.outputURL = outputURL
+    exportSession.outputFileType = outputFileType
+    exportSession.shouldOptimizeForNetworkUse = true
+    exportSession.videoComposition = makeVideoComposition(
+      for: asset,
+      filterId: exportFilterId,
+      matrix: exportMatrix,
+      intensity: exportIntensity
+    )
+
+    return (exportSession, outputURL)
+  }
+
   func generateProjectPreview(
     projectId: String,
     sourceUri: String,
@@ -1750,6 +1837,24 @@ extension AuraFilteredVideoView {
     return previewDirectory.appendingPathComponent(
       "\(sanitizedProjectId)_\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
     )
+  }
+
+  private func preferredExportFileType(for session: AVAssetExportSession) throws -> AVFileType {
+    if session.supportedFileTypes.contains(.mp4) {
+      return .mp4
+    }
+
+    if session.supportedFileTypes.contains(.mov) {
+      return .mov
+    }
+
+    throw AuraVideoExportError.unsupportedFileType
+  }
+
+  private func makeTemporaryExportURL(fileType: AVFileType) -> URL {
+    let fileExtension = fileType == .mov ? "mov" : "mp4"
+    let filename = "aura_export_\(Int(Date().timeIntervalSince1970 * 1000))_\(UUID().uuidString).\(fileExtension)"
+    return FileManager.default.temporaryDirectory.appendingPathComponent(filename)
   }
 }
 

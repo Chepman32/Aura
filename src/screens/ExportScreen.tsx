@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import RNFS from 'react-native-fs';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -43,18 +41,6 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 /** Fraction of screen height the user must swipe to cancel the export. */
 const CANCEL_THRESHOLD = 0.3;
 
-/**
- * FFmpeg's statistics callback delivers raw playback milliseconds.
- * We estimate a maximum duration to derive a 0–1 fraction.
- * The screen corrects this once the export completes.
- *
- * In a real app you would probe duration via react-native-video's
- * onLoad callback before pushing to the Export screen.
- * We default to 60 seconds; progress will saturate at 1 before finishing,
- * which is acceptable UX (ring stays at 100% for the last moments).
- */
-const ESTIMATED_DURATION_MS = 60_000;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -66,6 +52,18 @@ type ExportPhase =
   | 'saving'
   | 'complete'
   | 'error';
+
+function toCameraRollUri(path: string): string {
+  if (path.startsWith('file://')) {
+    return path;
+  }
+
+  if (path.startsWith('/')) {
+    return `file://${path}`;
+  }
+
+  return path;
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -158,22 +156,13 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
         return;
       }
 
-      // Resolve the absolute path to the bundled .cube LUT file.
-      // On iOS LUTs live in the main bundle; on Android they are copied to
-      // assets. The empty string path triggers the FFmpeg "null" vf graph
-      // when there is no LUT (e.g. the "original" filter).
-      const lutPath = filter.lutFile
-        ? Platform.OS === 'ios'
-          ? `${RNFS.MainBundlePath}/luts/${filter.lutFile}`
-          : `${RNFS.DocumentDirectoryPath}/luts/${filter.lutFile}`
-        : '';
-
       startExport();
 
       try {
         const outputPath = await executeExport(
           videoUri,
-          lutPath,
+          filter.id,
+          filter.colorMatrix,
           intensity,
           (progressValue: number) => {
             if (cancelled || !isMountedRef.current) {
@@ -194,7 +183,7 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
         setPhase('saving');
 
         try {
-          await CameraRoll.saveAsset(`file://${outputPath}`, { type: 'video' });
+          await CameraRoll.saveAsset(toCameraRollUri(outputPath), { type: 'video' });
         } catch (saveErr) {
           // Saving failed — still mark complete so the user isn't stuck, but
           // surface an error message.

@@ -1,49 +1,129 @@
-import { getOutputPath } from './fileSystem';
+import {
+  NativeEventEmitter,
+  NativeModules,
+  Platform,
+} from 'react-native';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { getOutputPath } from './fileSystem';
 
 export type ProgressCallback = (progress: number) => void;
 
-// ---------------------------------------------------------------------------
-// Module-level state for cancellation
-// ---------------------------------------------------------------------------
+interface NativeVideoExportModule {
+  exportVideo: (
+    sourceUri: string,
+    filterId: string,
+    filterMatrixPayload: string,
+    filterIntensity: number,
+  ) => Promise<string>;
+  cancelExport: () => Promise<void>;
+}
 
-let cancelled = false;
-let activeTimer: ReturnType<typeof setInterval> | null = null;
+const EXPORT_PROGRESS_EVENT = 'AuraVideoExporterProgress';
 
-// ---------------------------------------------------------------------------
-// Export
-// ---------------------------------------------------------------------------
+const nativeExporter: NativeVideoExportModule | undefined =
+  NativeModules.AuraVideoExporter;
 
-/**
- * Runs a video export applying a 3D LUT.
- *
- * TODO: Integrate FFmpegKit when a working native binary is available.
- * Currently simulates export progress for UI development.
- *
- * When a real FFmpeg backend is connected:
- * - Full intensity: `-vf "lut3d='${lutPath}'"` with libx264 -preset medium -crf 18 -c:a copy
- * - Partial intensity: filter_complex with split/lut3d/blend
- * - Progress: parse time from FFmpegKit statistics callback
- */
+let exporterEmitter: NativeEventEmitter | null = null;
+let fallbackCancelled = false;
+let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+
 export async function executeExport(
   inputUri: string,
-  lutPath: string,
+  filterId: string,
+  filterMatrix: ReadonlyArray<number>,
   intensity: number,
   onProgress?: ProgressCallback,
 ): Promise<string> {
+  if (Platform.OS === 'ios' && nativeExporter?.exportVideo) {
+    return executeNativeExport(
+      inputUri,
+      filterId,
+      filterMatrix,
+      intensity,
+      onProgress,
+    );
+  }
+
+  return simulateExport(inputUri, onProgress);
+}
+
+export async function cancelExport(): Promise<void> {
+  if (Platform.OS === 'ios' && nativeExporter?.cancelExport) {
+    await nativeExporter.cancelExport();
+    return;
+  }
+
+  fallbackCancelled = true;
+  if (fallbackTimer) {
+    clearInterval(fallbackTimer);
+    fallbackTimer = null;
+  }
+}
+
+async function executeNativeExport(
+  inputUri: string,
+  filterId: string,
+  filterMatrix: ReadonlyArray<number>,
+  intensity: number,
+  onProgress?: ProgressCallback,
+): Promise<string> {
+  const emitter = getExporterEmitter();
+  const subscription = emitter?.addListener(
+    EXPORT_PROGRESS_EVENT,
+    (event: { progress?: number } | undefined) => {
+      if (typeof event?.progress !== 'number') {
+        return;
+      }
+
+      onProgress?.(clampProgress(event.progress));
+    },
+  );
+
+  try {
+    const outputPath = await nativeExporter!.exportVideo(
+      inputUri,
+      filterId,
+      filterMatrix.join(','),
+      intensity,
+    );
+
+    onProgress?.(1);
+    return normalizeOutputPath(outputPath);
+  } finally {
+    subscription?.remove();
+  }
+}
+
+function getExporterEmitter(): NativeEventEmitter | null {
+  if (!nativeExporter) {
+    return null;
+  }
+
+  if (!exporterEmitter) {
+    exporterEmitter = new NativeEventEmitter(
+      nativeExporter as never,
+    );
+  }
+
+  return exporterEmitter;
+}
+
+function simulateExport(
+  inputUri: string,
+  onProgress?: ProgressCallback,
+): Promise<string> {
   const outputPath = getOutputPath('mp4');
-  cancelled = false;
+  fallbackCancelled = false;
 
   return new Promise<string>((resolve, reject) => {
     let progress = 0;
 
-    activeTimer = setInterval(() => {
-      if (cancelled) {
-        if (activeTimer) clearInterval(activeTimer);
-        activeTimer = null;
+    fallbackTimer = setInterval(() => {
+      if (fallbackCancelled) {
+        if (fallbackTimer) {
+          clearInterval(fallbackTimer);
+        }
+        fallbackTimer = null;
         reject(new Error('Export cancelled.'));
         return;
       }
@@ -51,12 +131,12 @@ export async function executeExport(
       progress += 0.02 + Math.random() * 0.03;
       if (progress >= 1) {
         progress = 1;
-        if (activeTimer) clearInterval(activeTimer);
-        activeTimer = null;
+        if (fallbackTimer) {
+          clearInterval(fallbackTimer);
+        }
+        fallbackTimer = null;
         onProgress?.(1);
-        // In production, this would return the actual rendered file path.
-        // For now, return the input URI as the "exported" result.
-        resolve(inputUri);
+        resolve(normalizeOutputPath(inputUri || outputPath));
         return;
       }
 
@@ -65,59 +145,10 @@ export async function executeExport(
   });
 }
 
-/**
- * Cancels the currently running export, if any.
- */
-export async function cancelExport(): Promise<void> {
-  cancelled = true;
-  if (activeTimer) {
-    clearInterval(activeTimer);
-    activeTimer = null;
-  }
+function normalizeOutputPath(path: string): string {
+  return path.replace(/^file:\/\//, '');
 }
 
-// ---------------------------------------------------------------------------
-// Command / filter graph builders (ready for FFmpegKit integration)
-// ---------------------------------------------------------------------------
-
-/**
- * Builds the FFmpeg command string.
- * Preserved for when FFmpegKit native binary becomes available.
- */
-export function buildCommand(
-  inputUri: string,
-  lutPath: string,
-  intensity: number,
-  outputPath: string,
-): string {
-  const escapedLut = lutPath.replace(/'/g, "'\\''");
-  const clampedIntensity = Math.min(1, Math.max(0, intensity));
-
-  let vfArg: string;
-
-  if (clampedIntensity >= 1.0) {
-    vfArg = `-vf "lut3d='${escapedLut}'"`;
-  } else if (clampedIntensity <= 0.0) {
-    vfArg = '-vf "null"';
-  } else {
-    const expr = `A*${clampedIntensity.toFixed(4)}+B*${(1 - clampedIntensity).toFixed(4)}`;
-    vfArg = [
-      `-filter_complex`,
-      `"[0:v]split=2[original][forLut];`,
-      `[forLut]lut3d='${escapedLut}'[graded];`,
-      `[original][graded]blend=all_expr='${expr}'[out]"`,
-      `-map "[out]"`,
-    ].join(' ');
-  }
-
-  return [
-    `-i "${inputUri}"`,
-    vfArg,
-    '-c:v libx264',
-    '-preset medium',
-    '-crf 18',
-    '-c:a copy',
-    '-movflags +faststart',
-    `"${outputPath}"`,
-  ].join(' ');
+function clampProgress(progress: number): number {
+  return Math.max(0, Math.min(1, progress));
 }

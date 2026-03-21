@@ -93,6 +93,11 @@ describe('EditorScreen', () => {
       listeners.blur?.();
     });
 
-    expect(refreshProjectPreview).toHaveBeenCalledWith('project-1', 2500);
+    expect(refreshProjectPreview).toHaveBeenCalledWith('project-1', {
+      timeMs: 2500,
+      sourceVideoUri: 'ph://demo',
+      filterId: 'cinematic',
+      filterIntensity: 0.7,
+    });
   });
 });

@@ -1,4 +1,5 @@
 #import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
 
 @interface RCT_EXTERN_MODULE(AuraProjectPreview, NSObject)
 
@@ -15,3 +16,20 @@ RCT_EXTERN_METHOD(
 
 @end
 
+@interface RCT_EXTERN_MODULE(AuraVideoExporter, RCTEventEmitter)
+
+RCT_EXTERN_METHOD(
+  exportVideo:(NSString *)sourceUri
+  filterId:(NSString *)filterId
+  filterMatrixPayload:(NSString *)filterMatrixPayload
+  filterIntensity:(nonnull NSNumber *)filterIntensity
+  resolve:(RCTPromiseResolveBlock)resolve
+  reject:(RCTPromiseRejectBlock)reject
+)
+
+RCT_EXTERN_METHOD(
+  cancelExport:(RCTPromiseResolveBlock)resolve
+  reject:(RCTPromiseRejectBlock)reject
+)
+
+@end
