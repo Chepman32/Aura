@@ -258,31 +258,53 @@ final class AuraFilteredVideoView: UIView {
     )
   }
 
-  private func filteredImage(for image: CIImage, time: Double) -> CIImage {
-    let (filterId, matrix, intensity) = snapshotFilterState()
+  private func filteredImage(
+    for image: CIImage,
+    time: Double,
+    filterId: String,
+    matrix: [CGFloat],
+    intensity: CGFloat
+  ) -> CIImage {
+    let normalizedFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let clampedIntensity = max(0, min(intensity, 1))
 
-    guard intensity > 0.001 else {
+    guard clampedIntensity > 0.001 else {
       return image
     }
 
-    switch filterId {
+    switch normalizedFilterId.isEmpty ? "original" : normalizedFilterId {
     case "cinematic":
-      return applyCinematicFilter(to: image, intensity: intensity)
+      return applyCinematicFilter(to: image, intensity: clampedIntensity)
     case "vintage":
-      return applyVintageFilter(to: image, intensity: intensity, time: time)
+      return applyVintageFilter(to: image, intensity: clampedIntensity, time: time)
     case "sketch":
-      return applySketchFilter(to: image, intensity: intensity)
+      return applySketchFilter(to: image, intensity: clampedIntensity)
     case "noir":
-      return applyNoirFilter(to: image, intensity: intensity)
+      return applyNoirFilter(to: image, intensity: clampedIntensity)
     case "vhs":
-      return applyVHSFilter(to: image, intensity: intensity, time: time)
+      return applyVHSFilter(to: image, intensity: clampedIntensity, time: time)
     case "neon":
-      return applyNeonFilter(to: image, intensity: intensity, time: time)
+      return applyNeonFilter(to: image, intensity: clampedIntensity, time: time)
     case "arctic":
-      return applyArcticFilter(to: image, intensity: intensity, time: time)
+      return applyArcticFilter(to: image, intensity: clampedIntensity, time: time)
     default:
-      return applyColorMatrixFilter(to: image, matrix: matrix, intensity: intensity)
+      return applyColorMatrixFilter(
+        to: image,
+        matrix: matrix,
+        intensity: clampedIntensity
+      )
     }
+  }
+
+  private func filteredImage(for image: CIImage, time: Double) -> CIImage {
+    let filterState = snapshotFilterState()
+    return filteredImage(
+      for: image,
+      time: time,
+      filterId: filterState.filterId,
+      matrix: filterState.matrix,
+      intensity: filterState.intensity
+    )
   }
 
   private func applyColorMatrixFilter(
@@ -1212,7 +1234,7 @@ final class AuraFilteredVideoView: UIView {
 
   private func updateFilterState() {
     let nextFilterId = (filterId as String).trimmingCharacters(in: .whitespacesAndNewlines)
-    let matrixValues = parseFilterMatrixPayload() ?? filterMatrix.compactMap { value -> CGFloat? in
+    let matrixValues = parseFilterMatrixPayload(filterMatrixPayload as String) ?? filterMatrix.compactMap { value -> CGFloat? in
       if let number = value as? NSNumber {
         return CGFloat(truncating: number)
       }
@@ -1235,8 +1257,8 @@ final class AuraFilteredVideoView: UIView {
     scheduleFilterRefreshIfNeeded()
   }
 
-  private func parseFilterMatrixPayload() -> [CGFloat]? {
-    let payload = (filterMatrixPayload as String).trimmingCharacters(in: .whitespacesAndNewlines)
+  private func parseFilterMatrixPayload(_ rawPayload: String) -> [CGFloat]? {
+    let payload = rawPayload.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !payload.isEmpty else { return nil }
 
     let values = payload.split(separator: ",").compactMap { component -> CGFloat? in
@@ -1463,10 +1485,9 @@ extension AuraFilteredVideoView {
     filterIntensity: CGFloat,
     timeMs: Double
   ) async throws -> String {
-    self.filterId = filterId as NSString
-    self.filterMatrixPayload = filterMatrixPayload as NSString
-    self.filterIntensity = NSNumber(value: Double(max(0, min(filterIntensity, 1))))
-    updateFilterState()
+    let previewFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let previewMatrix = parseFilterMatrixPayload(filterMatrixPayload) ?? identityColorMatrix
+    let previewIntensity = max(0, min(filterIntensity, 1))
 
     guard let asset = await loadAsset(from: sourceUri) else {
       throw AuraProjectPreviewError.assetUnavailable
@@ -1486,7 +1507,10 @@ extension AuraFilteredVideoView {
     let sourceImage = CIImage(cgImage: rawImage)
     let filtered = filteredImage(
       for: sourceImage.clampedToExtent(),
-      time: max(0, timeMs / 1000)
+      time: max(0, timeMs / 1000),
+      filterId: previewFilterId,
+      matrix: previewMatrix,
+      intensity: previewIntensity
     ).cropped(to: sourceImage.extent)
 
     guard let outputImage = ciContext.createCGImage(filtered, from: filtered.extent) else {

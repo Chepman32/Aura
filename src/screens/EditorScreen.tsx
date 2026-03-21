@@ -7,7 +7,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Play, Pause } from 'lucide-react-native';
+import { ChevronLeft, Play, Pause } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -55,6 +55,28 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   const [timelineWidth, setTimelineWidth] = useState(0);
   const hydratedProjectId = useRef<string | null>(null);
 
+  const persistProjectSnapshot = useCallback(() => {
+    if (!project) {
+      return;
+    }
+
+    const latestState = useEditorStore.getState();
+    const previewTimeMs = Math.round(latestState.currentTime * 1000);
+
+    updateProjectSession(projectId, {
+      filterId: latestState.activeFilterId,
+      filterIntensity: latestState.filterIntensity,
+      previewTimeMs,
+    });
+
+    refreshProjectPreview(projectId, {
+      timeMs: previewTimeMs,
+      sourceVideoUri: project.sourceVideoUri,
+      filterId: latestState.activeFilterId,
+      filterIntensity: latestState.filterIntensity,
+    }).catch(() => {});
+  }, [project, projectId, refreshProjectPreview, updateProjectSession]);
+
   useEffect(() => {
     if (!project || hydratedProjectId.current === projectId) {
       return;
@@ -77,7 +99,7 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
       reset();
     };
   }, [
-    project,
+    project?.id,
     projectId,
     requestSeek,
     reset,
@@ -117,21 +139,10 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
       return;
     }
 
-    const unsubscribe = navigation.addListener('blur', () => {
-      const latestState = useEditorStore.getState();
-      const previewTimeMs = Math.round(latestState.currentTime * 1000);
-
-      updateProjectSession(projectId, {
-        filterId: latestState.activeFilterId,
-        filterIntensity: latestState.filterIntensity,
-        previewTimeMs,
-      });
-
-      refreshProjectPreview(projectId, previewTimeMs).catch(() => {});
-    });
+    const unsubscribe = navigation.addListener('blur', persistProjectSnapshot);
 
     return unsubscribe;
-  }, [navigation, project, projectId, refreshProjectPreview, updateProjectSession]);
+  }, [navigation, persistProjectSnapshot, project]);
 
   const viewportHeight = screenHeight * VIEWPORT_RATIO;
   const activeFilter = getFilterById(activeFilterId);
@@ -143,6 +154,11 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   const togglePlayback = useCallback(() => {
     setIsPlaying(!isPlaying);
   }, [isPlaying, setIsPlaying]);
+
+  const handleGoBack = useCallback(() => {
+    persistProjectSnapshot();
+    navigation.goBack();
+  }, [navigation, persistProjectSnapshot]);
 
   const handleExport = useCallback(() => {
     if (!project) {
@@ -209,6 +225,15 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     <View style={styles.container}>
       {/* Video Viewport */}
       <VideoViewport height={viewportHeight} />
+
+      <AnimatedPressable
+        onPress={handleGoBack}
+        style={[styles.backButton, { top: insets.top + spacing.sm }]}
+        accessibilityLabel="Go Back"
+        accessibilityRole="button"
+      >
+        <ChevronLeft size={20} color={colors.textPrimary} />
+      </AnimatedPressable>
 
       {/* Control Deck */}
       <View style={[styles.controlDeck, { paddingBottom: insets.bottom + spacing.xs }]}>
@@ -288,6 +313,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.black,
+  },
+  backButton: {
+    position: 'absolute',
+    left: spacing.md,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   missingState: {
     flex: 1,

@@ -51,6 +51,13 @@ interface ProjectPreviewUpdate {
   previewTimeMs?: number;
 }
 
+interface RefreshProjectPreviewOptions {
+  sourceVideoUri?: string;
+  filterId?: string;
+  filterIntensity?: number;
+  timeMs?: number;
+}
+
 interface ProjectActions {
   createProject: (input: CreateProjectInput) => Project;
   renameProject: (projectId: string, nextName: string) => void;
@@ -69,7 +76,7 @@ interface ProjectActions {
   ) => void;
   refreshProjectPreview: (
     projectId: string,
-    overrideTimeMs?: number,
+    options?: RefreshProjectPreviewOptions,
   ) => Promise<void>;
   createFolder: (name?: string) => Folder;
   renameFolder: (folderId: string, nextName: string) => void;
@@ -143,7 +150,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           projects: [project, ...state.projects],
         }));
 
-        get().refreshProjectPreview(project.id, 0).catch(() => {});
+        get().refreshProjectPreview(project.id, { timeMs: 0 }).catch(() => {});
         return project;
       },
 
@@ -183,7 +190,12 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }));
 
         get()
-          .refreshProjectPreview(duplicate.id, duplicate.previewTimeMs)
+          .refreshProjectPreview(duplicate.id, {
+            timeMs: duplicate.previewTimeMs,
+            sourceVideoUri: duplicate.sourceVideoUri,
+            filterId: duplicate.filterId,
+            filterIntensity: duplicate.filterIntensity,
+          })
           .catch(() => {});
         return duplicate;
       },
@@ -302,22 +314,26 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }
       },
 
-      refreshProjectPreview: async (projectId, overrideTimeMs) => {
+      refreshProjectPreview: async (projectId, options) => {
         const project = get().projects.find((item) => item.id === projectId);
         if (!project) {
           return;
         }
 
-        const timeMs =
-          overrideTimeMs === undefined
+        const timeMs = clampPreviewTime(
+          options?.timeMs === undefined
             ? project.previewTimeMs
-            : clampPreviewTime(overrideTimeMs);
+            : options.timeMs,
+        );
+        const sourceVideoUri = options?.sourceVideoUri ?? project.sourceVideoUri;
+        const filterId = options?.filterId ?? project.filterId;
+        const filterIntensity = options?.filterIntensity ?? project.filterIntensity;
 
         const previewUri = await generateProjectPreview({
           projectId: project.id,
-          sourceVideoUri: project.sourceVideoUri,
-          filterId: project.filterId,
-          filterIntensity: project.filterIntensity,
+          sourceVideoUri,
+          filterId,
+          filterIntensity,
           timeMs,
         });
 

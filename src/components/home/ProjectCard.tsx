@@ -6,7 +6,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import AnimatedPressable from '../shared/AnimatedPressable';
 import DurationBadge from './DurationBadge';
 import type { ColumnCount } from '../../hooks/usePinchToResize';
 import { colors, spacing, typography } from '../../theme';
@@ -16,7 +15,6 @@ interface ProjectCardProps {
   name: string;
   duration: number;
   columns: ColumnCount;
-  onPress: () => void;
 }
 
 function ProjectCard({
@@ -24,7 +22,6 @@ function ProjectCard({
   name,
   duration,
   columns,
-  onPress,
 }: ProjectCardProps): React.JSX.Element {
   const { width: screenWidth } = useWindowDimensions();
   const totalGap = spacing.sm * (columns - 1);
@@ -33,11 +30,7 @@ function ProjectCard({
   const cellHeight = (cellWidth * 9) / 16;
 
   return (
-    <AnimatedPressable
-      onPress={onPress}
-      style={[styles.card, { width: cellWidth }]}
-      pressedScale={0.98}
-    >
+    <View style={[styles.card, { width: cellWidth }]}>
       <View style={[styles.previewFrame, { height: cellHeight }]}>
         <Image
           source={{ uri: previewUri }}
@@ -50,7 +43,7 @@ function ProjectCard({
       <Text style={styles.title} numberOfLines={2}>
         {name}
       </Text>
-    </AnimatedPressable>
+    </View>
   );
 }
 
@@ -75,4 +68,3 @@ const styles = StyleSheet.create({
 });
 
 export default memo(ProjectCard);
-

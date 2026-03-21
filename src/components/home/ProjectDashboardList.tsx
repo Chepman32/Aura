@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
   Platform,
   StyleSheet,
   Text,
+  type ViewProps,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,6 +53,14 @@ interface ProjectDashboardListProps {
   onFolderAction: (section: ProjectSection, action: FolderAction) => void;
 }
 
+const LONG_PRESS_INTENT_THRESHOLD_MS = 400;
+
+type InteractiveMenuViewProps = React.ComponentProps<typeof MenuView> &
+  Pick<ViewProps, 'onTouchStart' | 'onTouchEnd' | 'onTouchCancel'>;
+
+const InteractiveMenuView =
+  MenuView as unknown as React.ComponentType<InteractiveMenuViewProps>;
+
 function icon(name: {
   ios: string;
   android: string;
@@ -73,7 +82,7 @@ export default function ProjectDashboardList({
   onFolderAction,
 }: ProjectDashboardListProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const { columns, pinchGesture } = usePinchToResize();
+  const { columns, pinchGesture } = usePinchToResize({ defaultColumns: 2 });
   const haptics = useHaptics();
 
   const [columnCount, setColumnCount] = useState<ColumnCount>(
@@ -82,6 +91,7 @@ export default function ProjectDashboardList({
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     [ALL_PROJECTS_SECTION_ID]: true,
   });
+  const touchStartedAtRef = useRef(0);
 
   const handleColumnChange = useCallback(
     (next: ColumnCount) => {
@@ -124,6 +134,33 @@ export default function ProjectDashboardList({
     }));
   }, []);
 
+  const handleMenuTouchStart = useCallback(() => {
+    touchStartedAtRef.current = Date.now();
+  }, []);
+
+  const handleMenuTouchCancel = useCallback(() => {
+    touchStartedAtRef.current = 0;
+  }, []);
+
+  const createMenuTapHandler = useCallback(
+    (onTap: () => void) => () => {
+      const touchStartedAt = touchStartedAtRef.current;
+      touchStartedAtRef.current = 0;
+
+      if (!touchStartedAt) {
+        return;
+      }
+
+      const pressDuration = Date.now() - touchStartedAt;
+      if (pressDuration >= LONG_PRESS_INTENT_THRESHOLD_MS) {
+        return;
+      }
+
+      onTap();
+    },
+    [],
+  );
+
   const regularFolderActions = useMemo(
     () =>
       folders.map((folder) => ({
@@ -142,11 +179,7 @@ export default function ProjectDashboardList({
       const isAllProjects = section.id === ALL_PROJECTS_SECTION_ID;
 
       const content = (
-        <AnimatedPressable
-          onPress={() => toggleSection(section.id)}
-          style={styles.sectionHeaderButton}
-          pressedScale={0.995}
-        >
+        <View style={styles.sectionHeaderButton}>
           <View style={styles.sectionHeaderLeft}>
             {section.kind === 'folder' ? (
               section.expanded ? (
@@ -165,11 +198,19 @@ export default function ProjectDashboardList({
             color={colors.textSecondary}
             style={{ transform: [{ rotate: chevronRotation }] }}
           />
-        </AnimatedPressable>
+        </View>
       );
 
       if (isAllProjects) {
-        return content;
+        return (
+          <AnimatedPressable
+            onPress={() => toggleSection(section.id)}
+            style={styles.sectionHeaderPressable}
+            pressedScale={0.995}
+          >
+            {content}
+          </AnimatedPressable>
+        );
       }
 
       const actions = isTrash
@@ -200,11 +241,14 @@ export default function ProjectDashboardList({
           ];
 
       return (
-        <MenuView
+        <InteractiveMenuView
           title={section.title}
           shouldOpenOnLongPress
           themeVariant="dark"
           actions={actions}
+          onTouchStart={handleMenuTouchStart}
+          onTouchEnd={createMenuTapHandler(() => toggleSection(section.id))}
+          onTouchCancel={handleMenuTouchCancel}
           onPressAction={({ nativeEvent }) => {
             const actionId = nativeEvent.event as FolderAction;
             if (actionId === 'clean-trash' && section.projects.length === 0) {
@@ -216,10 +260,16 @@ export default function ProjectDashboardList({
           }}
         >
           {content}
-        </MenuView>
+        </InteractiveMenuView>
       );
     },
-    [onFolderAction, toggleSection],
+    [
+      createMenuTapHandler,
+      handleMenuTouchCancel,
+      handleMenuTouchStart,
+      onFolderAction,
+      toggleSection,
+    ],
   );
 
   const renderRow = useCallback(
@@ -278,12 +328,15 @@ export default function ProjectDashboardList({
               ];
 
           return (
-            <MenuView
+            <InteractiveMenuView
               key={`${section.id}:${project.id}`}
               title={project.name}
               shouldOpenOnLongPress
               themeVariant="dark"
               actions={actions}
+              onTouchStart={handleMenuTouchStart}
+              onTouchEnd={createMenuTapHandler(() => onProjectPress(project.id))}
+              onTouchCancel={handleMenuTouchCancel}
               onPressAction={({ nativeEvent }) => {
                 const actionId = nativeEvent.event;
                 if (actionId.startsWith('move:')) {
@@ -302,14 +355,21 @@ export default function ProjectDashboardList({
                 name={project.name}
                 duration={project.duration}
                 columns={columnCount}
-                onPress={() => onProjectPress(project.id)}
               />
-            </MenuView>
+            </InteractiveMenuView>
           );
         })}
       </View>
     ),
-    [columnCount, onProjectAction, onProjectPress, regularFolderActions],
+    [
+      columnCount,
+      createMenuTapHandler,
+      handleMenuTouchCancel,
+      handleMenuTouchStart,
+      onProjectAction,
+      onProjectPress,
+      regularFolderActions,
+    ],
   );
 
   return (
@@ -403,6 +463,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.background,
+  },
+  sectionHeaderPressable: {
     backgroundColor: colors.background,
   },
   sectionHeaderLeft: {

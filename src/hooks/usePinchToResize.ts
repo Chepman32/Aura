@@ -22,6 +22,10 @@ interface UsePinchToResizeResult {
   pinchGesture: ReturnType<typeof Gesture.Pinch>;
 }
 
+interface UsePinchToResizeOptions {
+  defaultColumns?: ColumnCount;
+}
+
 /**
  * Drives a column-count grid layout via a pinch gesture.
  *
@@ -33,8 +37,12 @@ interface UsePinchToResizeResult {
  * steps by ±1 and the baseline resets. This avoids jumpy multi-step
  * changes in a single gesture.
  */
-export function usePinchToResize(): UsePinchToResizeResult {
-  const columns = useSharedValue<ColumnCount>(DEFAULT_COLUMNS);
+export function usePinchToResize(
+  options?: UsePinchToResizeOptions,
+): UsePinchToResizeResult {
+  const columns = useSharedValue<ColumnCount>(
+    options?.defaultColumns ?? DEFAULT_COLUMNS,
+  );
 
   // Tracks the scale at the last commit so we can measure relative movement.
   const baseScale = useSharedValue(1);
