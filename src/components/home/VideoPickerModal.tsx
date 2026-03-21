@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Linking,
   Modal,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -15,7 +14,13 @@ import { requestMediaLibrary } from '../../services/permissions';
 import LibraryGrid from './LibraryGrid';
 import AnimatedPressable from '../shared/AnimatedPressable';
 import SkeletonLoader from '../shared/SkeletonLoader';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 
 type PickerState = 'idle' | 'loading' | 'ready' | 'denied' | 'blocked';
 
@@ -30,6 +35,9 @@ export default function VideoPickerModal({
   onClose,
   onSelectVideo,
 }: VideoPickerModalProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const insets = useSafeAreaInsets();
   const [pickerState, setPickerState] = useState<PickerState>('idle');
   const didBootstrap = useRef(false);
@@ -176,67 +184,69 @@ export default function VideoPickerModal({
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  title: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceLight,
-  },
-  content: {
-    flex: 1,
-  },
-  skeletonContainer: {
-    flex: 1,
-    paddingTop: spacing.md,
-  },
-  stateContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  stateTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  stateBody: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  primaryButton: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  primaryButtonText: {
-    ...typography.bodyMedium,
-    color: colors.textPrimary,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    title: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+    },
+    closeButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceLight,
+    },
+    content: {
+      flex: 1,
+    },
+    skeletonContainer: {
+      flex: 1,
+      paddingTop: spacing.md,
+    },
+    stateContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.xl,
+    },
+    stateTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
+    stateBody: {
+      ...typography.body,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: spacing.lg,
+    },
+    primaryButton: {
+      backgroundColor: colors.accent,
+      borderRadius: 14,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.sm + 2,
+    },
+    primaryButtonText: {
+      ...typography.bodyMedium,
+      color: colors.accentForeground,
+    },
+  };
+};

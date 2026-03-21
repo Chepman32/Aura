@@ -23,7 +23,13 @@ import { getFilterById } from '../filters';
 import { executeExport, cancelExport } from '../services/ffmpeg';
 import { cleanup } from '../services/fileSystem';
 import { useExportStore } from '../store/useExportStore';
-import { colors, spacing, typography } from '../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../theme';
 import { SPRING_STIFF, SPRING_GENTLE } from '../theme/animations';
 import type { RootStackParamList } from '../app/navigation/types';
 
@@ -70,6 +76,9 @@ function toCameraRollUri(path: string): string {
 // ---------------------------------------------------------------------------
 
 export default function ExportScreen({ route, navigation }: Props): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const { videoUri, filterId, intensity } = route.params;
 
   // ── Store ────────────────────────────────────────────────────────────────
@@ -371,77 +380,81 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
 // Styles
 // ---------------------------------------------------------------------------
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  visualArea: {
-    width: 260,
-    height: 260,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xl,
-  },
-  statusLabel: {
-    ...typography.subtitle,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  doneLabel: {
-    color: colors.textPrimary,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    marginTop: spacing.md,
-    gap: spacing.md,
-  },
-  errorTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  errorMessage: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  retryButton: {
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 12,
-  },
-  retryButtonText: {
-    ...typography.bodyMedium,
-    color: colors.textPrimary,
-  },
-  cancelArea: {
-    position: 'absolute',
-    bottom: spacing.xxl,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.md,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceLight,
-  },
-  cancelText: {
-    ...typography.bodyMedium,
-    color: colors.textSecondary,
-  },
-  dragHandle: {
-    position: 'absolute',
-    top: spacing.sm,
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    visualArea: {
+      width: 260,
+      height: 260,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xl,
+    },
+    statusLabel: {
+      ...typography.subtitle,
+      color: colors.textSecondary,
+      marginTop: spacing.sm,
+      textAlign: 'center',
+    },
+    doneLabel: {
+      color: colors.textPrimary,
+    },
+    errorContainer: {
+      alignItems: 'center',
+      paddingHorizontal: spacing.xl,
+      marginTop: spacing.md,
+      gap: spacing.md,
+    },
+    errorTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    errorMessage: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    retryButton: {
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.md,
+      backgroundColor: colors.accent,
+      borderRadius: 12,
+    },
+    retryButtonText: {
+      ...typography.bodyMedium,
+      color: colors.accentForeground,
+    },
+    cancelArea: {
+      position: 'absolute',
+      bottom: spacing.xxl,
+      alignItems: 'center',
+    },
+    cancelButton: {
+      paddingHorizontal: spacing.xxl,
+      paddingVertical: spacing.md,
+      borderRadius: 24,
+      backgroundColor: colors.surfaceLight,
+    },
+    cancelText: {
+      ...typography.bodyMedium,
+      color: colors.textSecondary,
+    },
+    dragHandle: {
+      position: 'absolute',
+      top: spacing.sm,
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: colors.border,
+    },
+  };
+};

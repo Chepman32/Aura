@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { Canvas, RoundedRect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -12,7 +12,13 @@ import Animated, {
 import { FILTERS, getFilterById } from '../../filters';
 import { useEditorStore } from '../../store/useEditorStore';
 import { useHaptics } from '../../hooks/useHaptics';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import { SPRING_STIFF } from '../../theme/animations';
 
 // ---------------------------------------------------------------------------
@@ -87,6 +93,9 @@ interface AuraRibbonProps {
  * - Updates the store's activeFilterId on snap.
  */
 export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const setActiveFilter = useEditorStore((s) => s.setActiveFilter);
   const activeFilterId = useEditorStore((s) => s.activeFilterId);
   const haptics = useHaptics();
@@ -247,14 +256,14 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   wrapper: {
     alignItems: 'center',
     paddingVertical: spacing.sm,
   },
   filterName: {
     ...typography.captionMedium,
-    color: colors.textPrimary,
+    color: theme.colors.textPrimary,
     marginBottom: spacing.xs,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -277,7 +286,7 @@ const styles = StyleSheet.create({
     marginLeft: -SWATCH_WIDTH / 2,
     borderRadius: SWATCH_RADIUS,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.92)',
+    borderColor: theme.colors.selectionBorder,
   },
   swatchRow: {
     position: 'absolute',

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -8,7 +8,7 @@ import Animated, {
   Easing,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { colors } from '../../theme';
+import { useThemedStyles, type AppTheme } from '../../theme';
 import type { ColumnCount } from '../../hooks/usePinchToResize';
 
 interface SkeletonLoaderProps {
@@ -29,6 +29,7 @@ export default function SkeletonLoader({
   count = 9,
   columns = 3,
 }: SkeletonLoaderProps): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const { width: screenWidth } = useWindowDimensions();
 
   const totalGap = columns - 1;
@@ -59,15 +60,21 @@ export default function SkeletonLoader({
     transform: [{ translateX: translateX.value }],
   }));
 
+  const cellStyle = useMemo(
+    () => ({
+      width: cellWidth,
+      height: cellHeight,
+      borderRadius: 12,
+    }),
+    [cellHeight, cellWidth],
+  );
+
   return (
     <View style={styles.grid}>
       {Array.from({ length: count }).map((_, index) => (
         <View
           key={index}
-          style={[
-            styles.cell,
-            { width: cellWidth, height: cellHeight, borderRadius: 12 },
-          ]}
+          style={[styles.cell, cellStyle]}
         >
           {/* Shimmer sweep */}
           <Animated.View style={[StyleSheet.absoluteFill, shimmerStyle]}>
@@ -79,22 +86,19 @@ export default function SkeletonLoader({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 1,
   },
   cell: {
-    backgroundColor: colors.surface,
+    backgroundColor: theme.colors.surface,
     overflow: 'hidden',
   },
   shimmer: {
     height: '100%',
-    // A gradient-like fade: opaque center, transparent edges.
-    // Pure RN cannot do LinearGradient without an extra library, so we use a
-    // lighter-toned solid that still reads clearly as a shimmer pass.
-    backgroundColor: colors.shimmer,
+    backgroundColor: theme.colors.shimmer,
     opacity: 0.6,
   },
 });

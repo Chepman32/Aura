@@ -16,6 +16,7 @@ import {
 } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import { SPRING_GENTLE } from '../../theme/animations';
+import { useAppTheme } from '../../theme';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -25,7 +26,6 @@ const CANVAS_SIZE = 260;
 const CENTER = CANVAS_SIZE / 2;
 const RING_RADIUS = 100;
 const STROKE_WIDTH = 8;
-const BG_RING_COLOR = '#2A2A2A';
 const FONT_SIZE = 32;
 
 // The arc starts at 12 o'clock. In SVG/Skia convention:
@@ -103,6 +103,7 @@ export default function ProgressRing({
   progress,
   dominantColor,
 }: ProgressRingProps): React.JSX.Element {
+  const { colors } = useAppTheme();
   const animatedProgress = useSharedValue(0);
 
   useEffect(() => {
@@ -138,7 +139,7 @@ export default function ProgressRing({
           r={RING_RADIUS}
           style="stroke"
           strokeWidth={STROKE_WIDTH}
-          color={BG_RING_COLOR}
+          color={colors.surfaceLighter}
         />
 
         {/* Glow arc — wider stroke with outer blur */}

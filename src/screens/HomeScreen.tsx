@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../app/navigation/types';
 import ProjectDashboardList from '../components/home/ProjectDashboardList';
@@ -9,7 +9,12 @@ import BlurHeader from '../components/home/BlurHeader';
 import type { VideoItem } from '../store/useLibraryStore';
 import { useProjectStore } from '../store/useProjectStore';
 import type { Project } from '../store/useProjectStore';
-import { colors, spacing, typography } from '../theme';
+import {
+  spacing,
+  typography,
+  useThemedStyles,
+  type AppTheme,
+} from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -38,6 +43,7 @@ function sanitizeName(value: string): string {
 }
 
 export default function HomeScreen({ navigation }: Props): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const folders = useProjectStore((state) => state.folders);
   const projects = useProjectStore((state) => state.projects);
   const trashActivated = useProjectStore((state) => state.trashActivated);
@@ -281,29 +287,33 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  emptyOverlay: {
-    position: 'absolute',
-    left: spacing.lg,
-    right: spacing.lg,
-    top: 132,
-    padding: spacing.lg,
-    borderRadius: 20,
-    backgroundColor: 'rgba(20,20,20,0.74)',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  emptyTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  emptyBody: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    emptyOverlay: {
+      position: 'absolute',
+      left: spacing.lg,
+      right: spacing.lg,
+      top: 132,
+      padding: spacing.lg,
+      borderRadius: 20,
+      backgroundColor: colors.overlay,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    emptyTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      marginBottom: spacing.xs,
+    },
+    emptyBody: {
+      ...typography.body,
+      color: colors.textSecondary,
+    },
+  };
+};

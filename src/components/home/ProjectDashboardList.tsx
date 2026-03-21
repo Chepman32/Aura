@@ -3,7 +3,6 @@ import {
   Alert,
   FlatList,
   Platform,
-  StyleSheet,
   Text,
   type ViewProps,
   View,
@@ -32,7 +31,13 @@ import { usePinchToResize } from '../../hooks/usePinchToResize';
 import { useHaptics } from '../../hooks/useHaptics';
 import type { Folder, Project } from '../../store/useProjectStore';
 import AnimatedPressable from '../shared/AnimatedPressable';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 
 type FolderAction = 'rename' | 'remove' | 'clean-trash';
 type ProjectAction =
@@ -81,6 +86,10 @@ export default function ProjectDashboardList({
   onProjectAction,
   onFolderAction,
 }: ProjectDashboardListProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
+  const menuThemeVariant = theme.isDark ? 'dark' : 'light';
   const insets = useSafeAreaInsets();
   const { columns, pinchGesture } = usePinchToResize({ defaultColumns: 2 });
   const haptics = useHaptics();
@@ -244,7 +253,7 @@ export default function ProjectDashboardList({
         <InteractiveMenuView
           title={section.title}
           shouldOpenOnLongPress
-          themeVariant="dark"
+          themeVariant={menuThemeVariant}
           actions={actions}
           onTouchStart={handleMenuTouchStart}
           onTouchEnd={createMenuTapHandler(() => toggleSection(section.id))}
@@ -264,10 +273,18 @@ export default function ProjectDashboardList({
       );
     },
     [
+      colors.textSecondary,
       createMenuTapHandler,
       handleMenuTouchCancel,
       handleMenuTouchStart,
+      menuThemeVariant,
       onFolderAction,
+      styles.countPill,
+      styles.countText,
+      styles.sectionHeaderButton,
+      styles.sectionHeaderLeft,
+      styles.sectionHeaderPressable,
+      styles.sectionTitle,
       toggleSection,
     ],
   );
@@ -332,7 +349,7 @@ export default function ProjectDashboardList({
               key={`${section.id}:${project.id}`}
               title={project.name}
               shouldOpenOnLongPress
-              themeVariant="dark"
+              themeVariant={menuThemeVariant}
               actions={actions}
               onTouchStart={handleMenuTouchStart}
               onTouchEnd={createMenuTapHandler(() => onProjectPress(project.id))}
@@ -366,10 +383,17 @@ export default function ProjectDashboardList({
       createMenuTapHandler,
       handleMenuTouchCancel,
       handleMenuTouchStart,
+      menuThemeVariant,
       onProjectAction,
       onProjectPress,
       regularFolderActions,
+      styles.projectRow,
     ],
+  );
+
+  const renderSeparator = useCallback(
+    () => <View style={styles.separator} />,
+    [styles.separator],
   );
 
   return (
@@ -405,7 +429,7 @@ export default function ProjectDashboardList({
 
             return renderRow(item.section, item.projects);
           }}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ItemSeparatorComponent={renderSeparator}
           showsVerticalScrollIndicator={false}
           removeClippedSubviews
           maxToRenderPerBatch={10}
@@ -418,7 +442,7 @@ export default function ProjectDashboardList({
       <View style={[styles.fabWrapper, { right: spacing.lg, bottom: insets.bottom + spacing.lg }]}>
         <MenuView
           title="Create"
-          themeVariant="dark"
+          themeVariant={menuThemeVariant}
           shouldOpenOnLongPress={false}
           actions={[
             {
@@ -437,7 +461,7 @@ export default function ProjectDashboardList({
           }
         >
           <View style={styles.fab}>
-            <Plus size={22} color={colors.black} />
+            <Plus size={22} color={colors.accentForeground} />
           </View>
         </MenuView>
       </View>
@@ -445,80 +469,84 @@ export default function ProjectDashboardList({
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  listContent: {
-    paddingHorizontal: 0,
-  },
-  separator: {
-    height: spacing.xs,
-  },
-  sectionHeaderButton: {
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    backgroundColor: colors.background,
-  },
-  sectionHeaderPressable: {
-    backgroundColor: colors.background,
-  },
-  sectionHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  sectionTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-  },
-  countPill: {
-    minWidth: 26,
-    height: 22,
-    paddingHorizontal: spacing.xs + 2,
-    borderRadius: 11,
-    backgroundColor: colors.surfaceLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countText: {
-    ...typography.captionMedium,
-    color: colors.textSecondary,
-  },
-  projectRow: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  emptyState: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  emptyStateText: {
-    ...typography.body,
-    color: colors.textTertiary,
-    paddingVertical: spacing.sm,
-  },
-  fabWrapper: {
-    position: 'absolute',
-  },
-  fab: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.textPrimary,
-    shadowColor: colors.black,
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    root: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    listContent: {
+      paddingHorizontal: 0,
+    },
+    separator: {
+      height: spacing.xs,
+    },
+    sectionHeaderButton: {
+      minHeight: 54,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      backgroundColor: colors.background,
+    },
+    sectionHeaderPressable: {
+      backgroundColor: colors.background,
+    },
+    sectionHeaderLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    sectionTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+    },
+    countPill: {
+      minWidth: 26,
+      height: 22,
+      paddingHorizontal: spacing.xs + 2,
+      borderRadius: 11,
+      backgroundColor: colors.surfaceLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    countText: {
+      ...typography.captionMedium,
+      color: colors.textSecondary,
+    },
+    projectRow: {
+      flexDirection: 'row',
+      flexWrap: 'nowrap',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+    },
+    emptyState: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    emptyStateText: {
+      ...typography.body,
+      color: colors.textTertiary,
+      paddingVertical: spacing.sm,
+    },
+    fabWrapper: {
+      position: 'absolute',
+    },
+    fab: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      shadowColor: colors.black,
+      shadowOpacity: 0.22,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 8 },
+      elevation: 8,
+    },
+  };
+};

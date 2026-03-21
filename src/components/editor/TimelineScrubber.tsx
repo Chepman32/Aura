@@ -1,15 +1,18 @@
 import React, { useCallback } from 'react';
-import { StyleSheet, View, FlatList } from 'react-native';
+import { View, FlatList } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   withSpring,
   useAnimatedStyle,
-  runOnJS,
 } from 'react-native-reanimated';
 
 import { useEditorStore } from '../../store/useEditorStore';
-import { colors, spacing } from '../../theme';
+import {
+  spacing,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import { SPRING_BOUNCY, SPRING_GENTLE } from '../../theme/animations';
 
 const SCRUBBER_HEIGHT = 80;
@@ -26,8 +29,9 @@ interface TimelineScrubberProps {
  * Hidden by default; swipe up to reveal, swipe down to dismiss.
  */
 export default function TimelineScrubber({
-  containerWidth,
+  containerWidth: _containerWidth,
 }: TimelineScrubberProps): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const duration = useEditorStore((s) => s.duration);
   const currentTime = useEditorStore((s) => s.currentTime);
   const setCurrentTime = useEditorStore((s) => s.setCurrentTime);
@@ -106,7 +110,7 @@ export default function TimelineScrubber({
         />
       );
     },
-    [currentTime, duration, frameCount],
+    [currentTime, duration, frameCount, styles.frame, styles.frameActive],
   );
 
   const frames = Array.from({ length: frameCount }, (_, i) => i);
@@ -127,7 +131,6 @@ export default function TimelineScrubber({
             const totalWidth = frameCount * (FRAME_WIDTH + FRAME_GAP);
             if (totalWidth > 0 && duration > 0) {
               const ratio = offsetX / totalWidth;
-              const time = ratio * duration;
               handleSeek(Math.floor(ratio * frameCount));
             }
           }}
@@ -138,10 +141,10 @@ export default function TimelineScrubber({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   container: {
     height: SCRUBBER_HEIGHT,
-    backgroundColor: colors.surface,
+    backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     overflow: 'hidden',
@@ -150,7 +153,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.surfaceLighter,
+    backgroundColor: theme.colors.surfaceLighter,
     alignSelf: 'center',
     marginTop: spacing.xs,
     marginBottom: spacing.xs,
@@ -162,12 +165,12 @@ const styles = StyleSheet.create({
   frame: {
     width: FRAME_WIDTH,
     height: FRAME_HEIGHT,
-    backgroundColor: colors.surfaceLighter,
+    backgroundColor: theme.colors.surfaceLighter,
     borderRadius: 4,
     marginRight: FRAME_GAP,
   },
   frameActive: {
     borderWidth: 2,
-    borderColor: colors.textPrimary,
+    borderColor: theme.colors.textPrimary,
   },
 });

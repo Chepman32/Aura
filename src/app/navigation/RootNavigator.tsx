@@ -1,7 +1,6 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { DarkTheme } from '@react-navigation/native';
-import { colors } from '../../theme';
+import { useAppTheme } from '../../theme';
 import type { RootStackParamList } from './types';
 
 import SplashScreen from '../../screens/SplashScreen';
@@ -12,22 +11,10 @@ import SettingsScreen from '../../screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-/**
- * Extended dark theme that overrides the card background so every
- * screen surface matches our design-system background token.
- */
-export const AppDarkTheme: typeof DarkTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: colors.background,
-    card: colors.background,
-    border: colors.border,
-    text: colors.textPrimary,
-  },
-};
-
 export default function RootNavigator(): React.JSX.Element {
+  const theme = useAppTheme();
+  const colors = theme.colors;
+
   return (
     <Stack.Navigator
       initialRouteName="Splash"

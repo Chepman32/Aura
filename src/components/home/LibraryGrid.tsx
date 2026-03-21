@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { useAnimatedReaction, runOnJS } from 'react-native-reanimated';
 import { usePinchToResize } from '../../hooks/usePinchToResize';
@@ -8,7 +8,11 @@ import { useHaptics } from '../../hooks/useHaptics';
 import LibraryCard from './LibraryCard';
 import SkeletonLoader from '../shared/SkeletonLoader';
 import type { VideoItem } from '../../store/useLibraryStore';
-import { colors, spacing } from '../../theme';
+import {
+  spacing,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface LibraryGridProps {
@@ -47,6 +51,7 @@ export default function LibraryGrid({
   topInset = 0,
   bottomInset,
 }: LibraryGridProps): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const { columns, pinchGesture } = usePinchToResize();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
@@ -97,15 +102,14 @@ export default function LibraryGrid({
     }
   }, [isLoading, hasNextPage, onLoadMore]);
 
-  const ListFooter = useCallback(() => {
-    if (!isLoading || videos.length === 0) return null;
-    // Show a smaller skeleton row while paginating.
-    return (
+  const renderRowGap = useCallback(() => <View style={styles.rowGap} />, [styles.rowGap]);
+
+  const listFooter =
+    !isLoading || videos.length === 0 ? null : (
       <View style={styles.footer}>
         <SkeletonLoader count={columnCount} columns={columnCount} />
       </View>
     );
-  }, [isLoading, videos.length, columnCount]);
 
   return (
     <GestureDetector gesture={pinchGesture}>
@@ -125,10 +129,10 @@ export default function LibraryGrid({
           { paddingTop: topInset },
           { paddingBottom: bottomInset ?? insets.bottom + spacing.md },
         ]}
-        ItemSeparatorComponent={() => <View style={styles.rowGap} />}
+        ItemSeparatorComponent={renderRowGap}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.4}
-        ListFooterComponent={ListFooter}
+        ListFooterComponent={listFooter}
         showsVerticalScrollIndicator={false}
         // Improves scroll performance for image-heavy grids.
         removeClippedSubviews
@@ -141,7 +145,7 @@ export default function LibraryGrid({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   columnWrapper: {
     gap: 1,
   },
@@ -149,7 +153,7 @@ const styles = StyleSheet.create({
     height: 1,
   },
   listContent: {
-    backgroundColor: colors.background,
+    backgroundColor: theme.colors.background,
   },
   footer: {
     marginTop: 1,

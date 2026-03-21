@@ -1,28 +1,20 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { createFileStorage } from './fileStorage';
+import { DEFAULT_THEME_ID, type AppThemeId } from '../theme/palettes';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface CustomPreset {
-  id: string;
-  name: string;
-  filterId: string;
-  intensity: number;
-}
-
 interface SettingsState {
   defaultIntensity: number;
-  customPresets: CustomPreset[];
+  themeId: AppThemeId;
 }
 
 interface SettingsActions {
   setDefaultIntensity: (intensity: number) => void;
-  addPreset: (preset: CustomPreset) => void;
-  removePreset: (id: string) => void;
-  updatePreset: (id: string, changes: Partial<Omit<CustomPreset, 'id'>>) => void;
+  setThemeId: (themeId: AppThemeId) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -34,32 +26,29 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     (set) => ({
       // State
       defaultIntensity: 1.0,
-      customPresets: [],
+      themeId: DEFAULT_THEME_ID,
 
       // Actions
       setDefaultIntensity: (intensity) =>
         set({ defaultIntensity: intensity }),
-
-      addPreset: (preset) =>
-        set((state) => ({
-          customPresets: [...state.customPresets, preset],
-        })),
-
-      removePreset: (id) =>
-        set((state) => ({
-          customPresets: state.customPresets.filter((p) => p.id !== id),
-        })),
-
-      updatePreset: (id, changes) =>
-        set((state) => ({
-          customPresets: state.customPresets.map((p) =>
-            p.id === id ? { ...p, ...changes } : p,
-          ),
-        })),
+      setThemeId: (themeId) => set({ themeId }),
     }),
     {
       name: 'aura-settings',
+      version: 2,
       storage: createJSONStorage(() => createFileStorage()),
+      partialize: (state) => ({
+        defaultIntensity: state.defaultIntensity,
+        themeId: state.themeId,
+      }),
+      migrate: (persistedState) => {
+        const state = (persistedState as Partial<SettingsState> | undefined) ?? {};
+
+        return {
+          defaultIntensity: state.defaultIntensity ?? 1.0,
+          themeId: state.themeId ?? DEFAULT_THEME_ID,
+        };
+      },
     },
   ),
 );

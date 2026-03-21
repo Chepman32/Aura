@@ -3,13 +3,18 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import AnimatedPressable from '../shared/AnimatedPressable';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 
 interface NamePromptModalProps {
   visible: boolean;
@@ -30,6 +35,9 @@ export default function NamePromptModal({
   onCancel,
   onConfirm,
 }: NamePromptModalProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<TextInput>(null);
 
@@ -66,7 +74,7 @@ export default function NamePromptModal({
             onChangeText={setValue}
             style={styles.input}
             placeholderTextColor={colors.textTertiary}
-            selectionColor={colors.textPrimary}
+            selectionColor={colors.accent}
             autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={() => onConfirm(value)}
@@ -85,65 +93,68 @@ export default function NamePromptModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.68)',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  title: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  description: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-  },
-  input: {
-    ...typography.body,
-    color: colors.textPrimary,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  secondaryButton: {
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surfaceLight,
-  },
-  secondaryButtonText: {
-    ...typography.bodyMedium,
-    color: colors.textPrimary,
-  },
-  primaryButton: {
-    borderRadius: 12,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.textPrimary,
-  },
-  primaryButtonText: {
-    ...typography.bodyMedium,
-    color: colors.black,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
 
+  return {
+    overlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.lg,
+    },
+    card: {
+      backgroundColor: colors.surface,
+      borderRadius: 20,
+      padding: spacing.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    title: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      marginBottom: spacing.xs,
+    },
+    description: {
+      ...typography.body,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+    },
+    input: {
+      ...typography.body,
+      color: colors.textPrimary,
+      backgroundColor: colors.surfaceLight,
+      borderRadius: 14,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    actions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: spacing.sm,
+      marginTop: spacing.md,
+    },
+    secondaryButton: {
+      borderRadius: 12,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.surfaceLight,
+    },
+    secondaryButtonText: {
+      ...typography.bodyMedium,
+      color: colors.textPrimary,
+    },
+    primaryButton: {
+      borderRadius: 12,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      backgroundColor: colors.accent,
+    },
+    primaryButtonText: {
+      ...typography.bodyMedium,
+      color: colors.accentForeground,
+    },
+  };
+};

@@ -1,5 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import React, { useEffect, useCallback, useRef } from 'react';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -12,7 +11,7 @@ import Animated, {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../app/navigation/types';
-import { colors } from '../theme';
+import { useThemedStyles, type AppTheme } from '../theme';
 import { SPRING_BOUNCY } from '../theme/animations';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
@@ -22,6 +21,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
  * Uses Reanimated (not Skia) for reliability.
  */
 export default function SplashScreen({ navigation }: Props): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const navigated = useRef(false);
 
   const goHome = useCallback(() => {
@@ -87,16 +87,16 @@ export default function SplashScreen({ navigation }: Props): React.JSX.Element {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   container: {
     flex: 1,
-    backgroundColor: colors.black,
+    backgroundColor: theme.colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
     fontSize: 48,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: theme.colors.textPrimary,
   },
 });

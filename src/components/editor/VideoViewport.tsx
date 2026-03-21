@@ -8,7 +8,11 @@ import { Volume2, VolumeX } from 'lucide-react-native';
 import { useEditorStore } from '../../store/useEditorStore';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { getFilterById, IDENTITY_MATRIX } from '../../filters';
-import { colors } from '../../theme';
+import {
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import AuraFilteredVideoView from './AuraFilteredVideoView';
 import AnimatedPressable from '../shared/AnimatedPressable';
 
@@ -27,6 +31,9 @@ interface VideoViewportProps {
  * Tap: play/pause toggle.
  */
 export default function VideoViewport({ height }: VideoViewportProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const currentVideoUri = useEditorStore((s) => s.currentVideoUri);
   const activeFilterId = useEditorStore((s) => s.activeFilterId);
   const filterIntensity = useEditorStore((s) => s.filterIntensity);
@@ -41,7 +48,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
   const { videoRef, toggle, seek, onLoad, onProgress, onEnd } = useVideoPlayer();
 
   const filter = getFilterById(activeFilterId);
-  const dominantColor = filter?.dominantColor ?? '#FFFFFF';
+  const dominantColor = filter?.dominantColor ?? colors.accent;
   const filterMatrix = filter?.colorMatrix ?? IDENTITY_MATRIX;
   const isOriginal = activeFilterId === 'original';
 
@@ -171,16 +178,16 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   container: {
     width: '100%',
     overflow: 'hidden',
-    backgroundColor: colors.black,
+    backgroundColor: theme.colors.black,
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
   },
   placeholder: {
-    backgroundColor: colors.surface,
+    backgroundColor: theme.colors.surface,
   },
   muteButton: {
     position: 'absolute',
@@ -189,7 +196,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: theme.colors.controlOverlay,
     alignItems: 'center',
     justifyContent: 'center',
   },

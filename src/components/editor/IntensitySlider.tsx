@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Canvas, RoundedRect, Rect } from '@shopify/react-native-skia';
+import { Text, View } from 'react-native';
+import { Canvas, RoundedRect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -12,7 +12,13 @@ import Animated, {
 
 import { useEditorStore } from '../../store/useEditorStore';
 import { getFilterById } from '../../filters';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import { SPRING_BOUNCY, SPRING_GENTLE } from '../../theme/animations';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +57,9 @@ export default function IntensitySlider({
   visible,
   containerWidth,
 }: IntensitySliderProps): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const filterIntensity = useEditorStore((s) => s.filterIntensity);
   const setFilterIntensity = useEditorStore((s) => s.setFilterIntensity);
   const activeFilterId = useEditorStore((s) => s.activeFilterId);
@@ -187,7 +196,7 @@ export default function IntensitySlider({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   container: {
     width: '100%',
     alignItems: 'center',
@@ -203,7 +212,7 @@ const styles = StyleSheet.create({
   },
   percentLabel: {
     ...typography.captionMedium,
-    color: colors.textSecondary,
+    color: theme.colors.textSecondary,
     marginTop: spacing.xs,
   },
 });

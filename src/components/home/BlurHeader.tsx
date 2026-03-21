@@ -6,7 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AnimatedPressable from '../shared/AnimatedPressable';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 import type { RootStackParamList } from '../../app/navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -24,6 +30,9 @@ export const HEADER_CONTENT_HEIGHT = 56;
 export default function BlurHeader(): React.JSX.Element {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
 
   const totalHeight = insets.top + HEADER_CONTENT_HEIGHT;
 
@@ -32,7 +41,7 @@ export default function BlurHeader(): React.JSX.Element {
       {Platform.OS === 'ios' ? (
         <BlurView
           style={StyleSheet.absoluteFill}
-          blurType="dark"
+          blurType={theme.blurType}
           blurAmount={20}
           reducedTransparencyFallbackColor={colors.background}
         />
@@ -63,33 +72,37 @@ export default function BlurHeader(): React.JSX.Element {
   );
 }
 
-const styles = StyleSheet.create({
-  wrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    overflow: 'hidden',
-  },
-  androidFallback: {
-    backgroundColor: 'rgba(10,10,10,0.92)',
-  },
-  contentRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-  },
-  title: {
-    ...typography.title,
-    color: colors.textPrimary,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    wrapper: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      overflow: 'hidden',
+    },
+    androidFallback: {
+      backgroundColor: colors.overlay,
+    },
+    contentRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+    },
+    title: {
+      ...typography.title,
+      color: colors.textPrimary,
+    },
+    iconButton: {
+      width: 36,
+      height: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  };
+};

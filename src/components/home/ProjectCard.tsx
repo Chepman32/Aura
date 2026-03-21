@@ -1,14 +1,18 @@
 import React, { memo } from 'react';
 import {
   Image,
-  StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import DurationBadge from './DurationBadge';
 import type { ColumnCount } from '../../hooks/usePinchToResize';
-import { colors, spacing, typography } from '../../theme';
+import {
+  spacing,
+  typography,
+  useThemedStyles,
+  type AppTheme,
+} from '../../theme';
 
 interface ProjectCardProps {
   previewUri: string;
@@ -23,6 +27,7 @@ function ProjectCard({
   duration,
   columns,
 }: ProjectCardProps): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const { width: screenWidth } = useWindowDimensions();
   const totalGap = spacing.sm * (columns - 1);
   const totalHorizontalPadding = spacing.md * 2;
@@ -47,24 +52,28 @@ function ProjectCard({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    gap: spacing.xs + 2,
-  },
-  previewFrame: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceLight,
-  },
-  image: {
-    flex: 1,
-  },
-  title: {
-    ...typography.captionMedium,
-    color: colors.textPrimary,
-    minHeight: 32,
-    paddingRight: spacing.xs,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    card: {
+      gap: spacing.xs + 2,
+    },
+    previewFrame: {
+      borderRadius: 16,
+      overflow: 'hidden',
+      backgroundColor: colors.surfaceLight,
+    },
+    image: {
+      flex: 1,
+    },
+    title: {
+      ...typography.captionMedium,
+      color: colors.textPrimary,
+      minHeight: 32,
+      paddingRight: spacing.xs,
+    },
+  };
+};
 
 export default memo(ProjectCard);

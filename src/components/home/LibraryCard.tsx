@@ -1,8 +1,9 @@
 import React, { memo } from 'react';
-import { Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { Image, useWindowDimensions } from 'react-native';
 import AnimatedPressable from '../shared/AnimatedPressable';
 import DurationBadge from './DurationBadge';
 import type { ColumnCount } from '../../hooks/usePinchToResize';
+import { useThemedStyles, type AppTheme } from '../../theme';
 
 interface LibraryCardProps {
   uri: string;
@@ -27,6 +28,7 @@ function LibraryCard({
   columns,
   onPress,
 }: LibraryCardProps): React.JSX.Element {
+  const styles = useThemedStyles(createStyles);
   const { width: screenWidth } = useWindowDimensions();
 
   // 1px gaps between columns: (columns - 1) total gap width across the row.
@@ -52,11 +54,11 @@ function LibraryCard({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: AppTheme) => ({
   card: {
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#1C1C1C',
+    backgroundColor: theme.colors.surfaceLight,
   },
   image: {
     flex: 1,

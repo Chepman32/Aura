@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet,
   View,
   Text,
   LayoutChangeEvent,
@@ -21,13 +20,22 @@ import IntensitySlider from '../components/editor/IntensitySlider';
 import AnimatedPressable from '../components/shared/AnimatedPressable';
 import { getFilterById } from '../filters';
 import { formatDuration } from '../utils/formatDuration';
-import { colors, spacing, typography } from '../theme';
+import {
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+} from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Editor'>;
 
 const VIEWPORT_RATIO = 0.50;
 
 export default function EditorScreen({ route, navigation }: Props): React.JSX.Element {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const colors = theme.colors;
   const { projectId } = route.params;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -100,6 +108,7 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     };
   }, [
     project?.id,
+    project,
     projectId,
     requestSeek,
     reset,
@@ -261,7 +270,7 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
                   styles.timelineProgress,
                   {
                     width: `${progressRatio * 100}%`,
-                    backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
+                    backgroundColor: activeFilter?.dominantColor ?? colors.accent,
                   },
                 ]}
               />
@@ -270,7 +279,7 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
                   styles.timelineThumb,
                   {
                     left: `${progressRatio * 100}%`,
-                    backgroundColor: activeFilter?.dominantColor ?? colors.textPrimary,
+                    backgroundColor: activeFilter?.dominantColor ?? colors.accent,
                   },
                 ]}
               />
@@ -309,124 +318,128 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.black,
-  },
-  backButton: {
-    position: 'absolute',
-    left: spacing.md,
-    zIndex: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  missingState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    backgroundColor: colors.background,
-  },
-  missingStateTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  missingStateBody: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  controlDeck: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingTop: spacing.sm,
-  },
-  playbackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  playButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  timeText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontVariant: ['tabular-nums'],
-  },
-  timelineContainer: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  timelineTrack: {
-    height: 4,
-    backgroundColor: colors.surfaceLighter,
-    borderRadius: 2,
-    position: 'relative',
-    overflow: 'visible',
-  },
-  timelineProgress: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  timelineThumb: {
-    position: 'absolute',
-    top: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginLeft: -6,
-  },
-  timelineTouchTarget: {
-    position: 'absolute',
-    top: -14,
-    right: 0,
-    bottom: -14,
-    left: 0,
-  },
-  filterNameButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-  },
-  filterName: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  intensityHint: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  exportRow: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    marginTop: 'auto',
-  },
-  exportButton: {
-    backgroundColor: colors.textPrimary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm + 4,
-    borderRadius: 24,
-  },
-  exportText: {
-    ...typography.body,
-    color: colors.black,
-    fontWeight: '700',
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    backButton: {
+      position: 'absolute',
+      left: spacing.md,
+      zIndex: 20,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.controlOverlay,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    missingState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.xl,
+      backgroundColor: colors.background,
+    },
+    missingStateTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
+    missingStateBody: {
+      ...typography.body,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    controlDeck: {
+      flex: 1,
+      backgroundColor: colors.background,
+      paddingTop: spacing.sm,
+    },
+    playbackRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.xs,
+    },
+    playButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.sm,
+    },
+    timeText: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      fontVariant: ['tabular-nums'],
+    },
+    timelineContainer: {
+      paddingHorizontal: spacing.md,
+      marginBottom: spacing.md,
+    },
+    timelineTrack: {
+      height: 4,
+      backgroundColor: colors.surfaceLighter,
+      borderRadius: 2,
+      position: 'relative',
+      overflow: 'visible',
+    },
+    timelineProgress: {
+      height: '100%',
+      borderRadius: 2,
+    },
+    timelineThumb: {
+      position: 'absolute',
+      top: -4,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      marginLeft: -6,
+    },
+    timelineTouchTarget: {
+      position: 'absolute',
+      top: -14,
+      right: 0,
+      bottom: -14,
+      left: 0,
+    },
+    filterNameButton: {
+      alignItems: 'center',
+      paddingVertical: spacing.xs,
+    },
+    filterName: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    intensityHint: {
+      ...typography.caption,
+      color: colors.textTertiary,
+      marginTop: 2,
+    },
+    exportRow: {
+      alignItems: 'center',
+      paddingVertical: spacing.sm,
+      marginTop: 'auto',
+    },
+    exportButton: {
+      backgroundColor: colors.accent,
+      paddingHorizontal: spacing.xl,
+      paddingVertical: spacing.sm + 4,
+      borderRadius: 24,
+    },
+    exportText: {
+      ...typography.body,
+      color: colors.accentForeground,
+      fontWeight: '700',
+    },
+  };
+};

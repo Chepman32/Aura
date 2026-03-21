@@ -1,41 +1,52 @@
 import React, { useCallback, useState } from 'react';
 import {
-  StyleSheet,
-  View,
-  Text,
   ScrollView,
-  Alert,
+  StyleSheet,
+  Text,
   TextInput,
+  View,
 } from 'react-native';
 import Animated, {
+  useAnimatedStyle,
   useSharedValue,
   withSpring,
-  useAnimatedStyle,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react-native';
+import { Check, ChevronDown } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../app/navigation/types';
 import { useSettingsStore } from '../store/useSettingsStore';
-import type { CustomPreset } from '../store/useSettingsStore';
-import { useEditorStore } from '../store/useEditorStore';
 import AnimatedPressable from '../components/shared/AnimatedPressable';
-import { FILTERS } from '../filters';
-import { colors, spacing, typography } from '../theme';
-import { SPRING_GENTLE } from '../theme/animations';
+import {
+  APP_THEMES,
+  APP_THEME_OPTIONS,
+  SPRING_GENTLE,
+  spacing,
+  typography,
+  useAppTheme,
+  useThemedStyles,
+  type AppTheme,
+  type AppThemeId,
+} from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
-// ---------------------------------------------------------------------------
-// Accordion Section
-// ---------------------------------------------------------------------------
 interface AccordionProps {
   title: string;
   children: React.ReactNode;
 }
 
+const THEME_COPY: Record<AppThemeId, string> = {
+  dark: 'High-contrast night palette.',
+  light: 'Neutral daylight surfaces.',
+  solar: 'Warm parchment and honey tones.',
+  mono: 'Quiet grayscale minimalism.',
+};
+
 function Accordion({ title, children }: AccordionProps) {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
   const [expanded, setExpanded] = useState(false);
   const height = useSharedValue(0);
   const rotation = useSharedValue(0);
@@ -48,7 +59,7 @@ function Accordion({ title, children }: AccordionProps) {
   }, [expanded, height, rotation]);
 
   const contentStyle = useAnimatedStyle(() => ({
-    maxHeight: height.value * 400,
+    maxHeight: height.value * 520,
     opacity: height.value,
     overflow: 'hidden' as const,
   }));
@@ -62,7 +73,7 @@ function Accordion({ title, children }: AccordionProps) {
       <AnimatedPressable onPress={toggle} style={styles.accordionHeader}>
         <Text style={styles.accordionTitle}>{title}</Text>
         <Animated.View style={chevronStyle}>
-          <ChevronDown size={20} color={colors.textSecondary} />
+          <ChevronDown size={20} color={theme.colors.textSecondary} />
         </Animated.View>
       </AnimatedPressable>
       <Animated.View style={contentStyle}>{children}</Animated.View>
@@ -70,51 +81,23 @@ function Accordion({ title, children }: AccordionProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Settings Screen
-// ---------------------------------------------------------------------------
 export default function SettingsScreen(_props: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
-
-  const defaultIntensity = useSettingsStore((s) => s.defaultIntensity);
-  const setDefaultIntensity = useSettingsStore((s) => s.setDefaultIntensity);
-  const customPresets = useSettingsStore((s) => s.customPresets);
-  const addPreset = useSettingsStore((s) => s.addPreset);
-  const removePreset = useSettingsStore((s) => s.removePreset);
+  const theme = useAppTheme();
+  const styles = useThemedStyles(createStyles);
+  const defaultIntensity = useSettingsStore((state) => state.defaultIntensity);
+  const setDefaultIntensity = useSettingsStore((state) => state.setDefaultIntensity);
+  const themeId = useSettingsStore((state) => state.themeId);
+  const setThemeId = useSettingsStore((state) => state.setThemeId);
 
   const handleIntensityChange = useCallback(
     (text: string) => {
-      const val = parseInt(text, 10);
-      if (!isNaN(val)) {
-        setDefaultIntensity(Math.max(0, Math.min(100, val)) / 100);
+      const value = parseInt(text, 10);
+      if (!Number.isNaN(value)) {
+        setDefaultIntensity(Math.max(0, Math.min(100, value)) / 100);
       }
     },
     [setDefaultIntensity],
-  );
-
-  const handleAddPreset = useCallback(() => {
-    const id = `preset_${Date.now()}`;
-    const preset: CustomPreset = {
-      id,
-      name: `Preset ${customPresets.length + 1}`,
-      filterId: 'cinematic',
-      intensity: defaultIntensity,
-    };
-    addPreset(preset);
-  }, [addPreset, customPresets.length, defaultIntensity]);
-
-  const handleRemovePreset = useCallback(
-    (id: string, name: string) => {
-      Alert.alert('Delete Preset', `Remove "${name}"?`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => removePreset(id),
-        },
-      ]);
-    },
-    [removePreset],
   );
 
   return (
@@ -125,7 +108,67 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
         { paddingBottom: insets.bottom + spacing.xl },
       ]}
     >
-      {/* Default Intensity */}
+      <Accordion title="Appearance">
+        <View style={styles.themeGrid}>
+          {APP_THEME_OPTIONS.map((option) => {
+            const optionTheme = APP_THEMES[option.id];
+            const isSelected = option.id === themeId;
+
+            return (
+              <AnimatedPressable
+                key={option.id}
+                onPress={() => setThemeId(option.id)}
+                style={[
+                  styles.themeCard,
+                  isSelected && styles.themeCardSelected,
+                ]}
+                accessibilityLabel={`Switch to ${option.label} theme`}
+                accessibilityRole="button"
+              >
+                <View style={styles.themeHeaderRow}>
+                  <Text style={styles.themeTitle}>{option.label}</Text>
+                  <View
+                    style={[
+                      styles.themeCheck,
+                      isSelected && styles.themeCheckSelected,
+                    ]}
+                  >
+                    {isSelected ? (
+                      <Check size={14} color={theme.colors.accentForeground} strokeWidth={2.4} />
+                    ) : null}
+                  </View>
+                </View>
+
+                <View style={styles.themePreviewRow}>
+                  <View
+                    style={[
+                      styles.themePreviewBlock,
+                      { backgroundColor: optionTheme.colors.background },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.themePreviewBlock,
+                      { backgroundColor: optionTheme.colors.surface },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.themePreviewAccent,
+                      { backgroundColor: optionTheme.colors.accent },
+                    ]}
+                  />
+                </View>
+
+                <Text style={styles.themeDescription}>
+                  {THEME_COPY[option.id]}
+                </Text>
+              </AnimatedPressable>
+            );
+          })}
+        </View>
+      </Accordion>
+
       <Accordion title="Default Intensity">
         <View style={styles.settingRow}>
           <Text style={styles.settingLabel}>Intensity (%)</Text>
@@ -135,7 +178,8 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
             onChangeText={handleIntensityChange}
             keyboardType="number-pad"
             maxLength={3}
-            placeholderTextColor={colors.textTertiary}
+            placeholderTextColor={theme.colors.textTertiary}
+            selectionColor={theme.colors.accent}
           />
         </View>
         <Text style={styles.hint}>
@@ -143,39 +187,10 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
         </Text>
       </Accordion>
 
-      {/* Custom Presets */}
-      <Accordion title="Custom Presets">
-        {customPresets.length === 0 ? (
-          <Text style={styles.emptyText}>No custom presets yet.</Text>
-        ) : (
-          customPresets.map((preset) => (
-            <View key={preset.id} style={styles.presetRow}>
-              <View style={styles.presetInfo}>
-                <Text style={styles.presetName}>{preset.name}</Text>
-                <Text style={styles.presetDetail}>
-                  {FILTERS.find((f) => f.id === preset.filterId)?.name ?? preset.filterId}{' '}
-                  · {Math.round(preset.intensity * 100)}%
-                </Text>
-              </View>
-              <AnimatedPressable
-                onPress={() => handleRemovePreset(preset.id, preset.name)}
-                style={styles.deleteButton}
-              >
-                <Trash2 size={18} color={colors.textTertiary} />
-              </AnimatedPressable>
-            </View>
-          ))
-        )}
-        <AnimatedPressable onPress={handleAddPreset} style={styles.addButton}>
-          <Plus size={18} color={colors.textPrimary} />
-          <Text style={styles.addButtonText}>Add Preset</Text>
-        </AnimatedPressable>
-      </Accordion>
-
-      {/* About */}
       <Accordion title="About">
         <Text style={styles.aboutText}>
-          Aura — Offline Video Color Grading{'\n'}
+          Aura{'\n'}
+          Offline video color grading{'\n'}
           Version 1.0.0
         </Text>
       </Accordion>
@@ -183,106 +198,138 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    paddingTop: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  accordionContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-  },
-  accordionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  accordionTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  settingLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  input: {
-    ...typography.body,
-    color: colors.textPrimary,
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    width: 64,
-    textAlign: 'center',
-  },
-  hint: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.textTertiary,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  presetRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  presetInfo: {
-    flex: 1,
-  },
-  presetName: {
-    ...typography.body,
-    color: colors.textPrimary,
-  },
-  presetDetail: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    marginTop: 2,
-  },
-  deleteButton: {
-    padding: spacing.sm,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  addButtonText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    marginLeft: spacing.sm,
-  },
-  aboutText: {
-    ...typography.body,
-    color: colors.textSecondary,
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    lineHeight: 22,
-  },
-});
+const createStyles = (theme: AppTheme) => {
+  const colors = theme.colors;
+
+  return {
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      paddingTop: spacing.md,
+      paddingHorizontal: spacing.md,
+    },
+    accordionContainer: {
+      backgroundColor: colors.surface,
+      borderRadius: 20,
+      marginBottom: spacing.md,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    accordionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md + 2,
+    },
+    accordionTitle: {
+      ...typography.subtitle,
+      color: colors.textPrimary,
+    },
+    themeGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.md,
+    },
+    themeCard: {
+      width: '48%',
+      minHeight: 134,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceLight,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.md,
+    },
+    themeCardSelected: {
+      borderColor: colors.accent,
+      backgroundColor: colors.surfaceLighter,
+    },
+    themeHeaderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: spacing.md,
+    },
+    themeTitle: {
+      ...typography.bodyMedium,
+      color: colors.textPrimary,
+    },
+    themeCheck: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+    },
+    themeCheckSelected: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    themePreviewRow: {
+      flexDirection: 'row',
+      gap: 6,
+      marginBottom: spacing.sm,
+    },
+    themePreviewBlock: {
+      flex: 1,
+      height: 34,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    themePreviewAccent: {
+      width: 26,
+      height: 34,
+      borderRadius: 10,
+    },
+    themeDescription: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      lineHeight: 18,
+    },
+    settingRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+    settingLabel: {
+      ...typography.body,
+      color: colors.textSecondary,
+    },
+    input: {
+      ...typography.body,
+      color: colors.textPrimary,
+      backgroundColor: colors.surfaceLight,
+      borderRadius: 10,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      width: 72,
+      textAlign: 'center',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    hint: {
+      ...typography.caption,
+      color: colors.textTertiary,
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.md,
+    },
+    aboutText: {
+      ...typography.body,
+      color: colors.textSecondary,
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.md,
+      lineHeight: 24,
+    },
+  };
+};
