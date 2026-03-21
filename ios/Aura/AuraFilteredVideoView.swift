@@ -300,6 +300,8 @@ final class AuraFilteredVideoView: UIView {
       return applyLUTFilter(to: image, lutName: "emerald", intensity: clampedIntensity)
     case "lavender":
       return applyLUTFilter(to: image, lutName: "lavender", intensity: clampedIntensity)
+    case "bleach":
+      return applyLUTFilter(to: image, lutName: "bleach", intensity: clampedIntensity)
     default:
       return applyColorMatrixFilter(
         to: image,
