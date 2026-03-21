@@ -287,6 +287,8 @@ final class AuraFilteredVideoView: UIView {
       return applyNeonFilter(to: image, intensity: clampedIntensity, time: time)
     case "arctic":
       return applyArcticFilter(to: image, intensity: clampedIntensity, time: time)
+    case "sunset":
+      return applySunsetFilter(to: image, intensity: clampedIntensity)
     default:
       return applyColorMatrixFilter(
         to: image,
@@ -857,6 +859,77 @@ final class AuraFilteredVideoView: UIView {
       .cropped(to: extent)
 
     return blendFilteredImage(image, with: neonImage, intensity: clampedIntensity)
+  }
+
+  private func applySunsetFilter(to image: CIImage, intensity: CGFloat) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+    let extent = image.extent
+
+    // 1. Warm colour grade: push toward golden-hour orange/amber
+    //    Reduce blue channel, boost red, warm temperature significantly
+    let graded = image
+      .applyingFilter("CITemperatureAndTint", parameters: [
+        "inputNeutral":       CIVector(x: 6500, y: 0),
+        "inputTargetNeutral": CIVector(x: 3200 - clampedIntensity * 600, y: 14),
+      ])
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 1.20 + clampedIntensity * 0.35,
+        kCIInputContrastKey:   1.05 + clampedIntensity * 0.10,
+        kCIInputBrightnessKey: 0.02,
+      ])
+      // Boost reds/oranges, crush blues — the defining sunset channel split
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 1.18 + clampedIntensity * 0.12, y: 0.05, z: -0.05, w: 0),
+        "inputGVector": CIVector(x: 0.02, y: 0.95, z: -0.04, w: 0),
+        "inputBVector": CIVector(x: -0.10, y: -0.08, z: 0.65 - clampedIntensity * 0.15, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+        "inputBiasVector": CIVector(x: 0.03, y: 0.01, z: -0.02, w: 0),
+      ])
+
+    // 2. Shadow toning: push shadows toward deep purple/magenta (classic golden hour)
+    //    Lift shadows with a warm-purple bias, keep highlights orange
+    let toned = graded
+      .applyingFilter("CIHighlightShadowAdjust", parameters: [
+        "inputShadowAmount":    0.65 + clampedIntensity * 0.20,
+        "inputHighlightAmount": 0.80,
+      ])
+
+    // 3. Glow: bloom on highlights simulates the hazy atmospheric light scatter at sunset
+    let bloomed = toned
+      .applyingFilter("CIBloom", parameters: [
+        kCIInputRadiusKey:    3.0 + clampedIntensity * 4.0,
+        kCIInputIntensityKey: 0.25 + clampedIntensity * 0.30,
+      ])
+      .cropped(to: extent)
+
+    // 4. Gradient sky burn: radial warm glow from top-center (where the sun would be)
+    //    Use a radial gradient tinted orange, screen-blended so it only brightens
+    let sunGlow = CIFilter(name: "CIRadialGradient", parameters: [
+      "inputCenter":  CIVector(x: extent.midX, y: extent.maxY * 0.85),
+      "inputRadius0": extent.width * 0.0,
+      "inputRadius1": extent.width * 0.85,
+      "inputColor0":  CIColor(red: 1.0, green: 0.45, blue: 0.05, alpha: 0.38 * clampedIntensity),
+      "inputColor1":  CIColor(red: 0.8, green: 0.20, blue: 0.30, alpha: 0.0),
+    ])?.outputImage?.cropped(to: extent)
+
+    let withGlow: CIImage
+    if let glow = sunGlow {
+      withGlow = bloomed
+        .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: glow])
+        .cropped(to: extent)
+    } else {
+      withGlow = bloomed
+    }
+
+    // 5. Vignette: darken corners to focus on the warm centre
+    let vignetted = withGlow
+      .applyingFilter("CIVignette", parameters: [
+        kCIInputIntensityKey: 0.45 + clampedIntensity * 0.30,
+        kCIInputRadiusKey:    1.4 + clampedIntensity * 0.4,
+      ])
+      .cropped(to: extent)
+
+    return blendFilteredImage(image, with: vignetted, intensity: clampedIntensity)
   }
 
   private func applyArcticFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
