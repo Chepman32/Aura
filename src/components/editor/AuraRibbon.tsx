@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
-import { Canvas, RoundedRect, Line, vec } from '@shopify/react-native-skia';
+import { Canvas, RoundedRect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -240,18 +240,6 @@ export default function AuraRibbon({ containerWidth }: AuraRibbonProps): React.J
                 { backgroundColor: withAlpha(activeFilter?.dominantColor ?? colors.textPrimary, 0.18) },
               ]}
             />
-
-            {/* Playhead — fixed white vertical line at center */}
-            <View style={styles.playheadContainer} pointerEvents="none">
-              <Canvas style={styles.playheadCanvas}>
-                <Line
-                  p1={vec(containerWidth / 2, 0)}
-                  p2={vec(containerWidth / 2, RIBBON_HEIGHT)}
-                  color="white"
-                  strokeWidth={2}
-                />
-              </Canvas>
-            </View>
           </View>
         </GestureDetector>
       </View>
@@ -295,12 +283,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-  },
-  playheadContainer: {
-    ...StyleSheet.absoluteFillObject,
-    // Elevation 0 so taps pass through to the gesture handler below.
-  },
-  playheadCanvas: {
-    flex: 1,
   },
 });
