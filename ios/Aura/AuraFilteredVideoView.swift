@@ -12,6 +12,11 @@ private let identityColorMatrix: [CGFloat] = [
   0, 0, 0, 1, 0,
 ]
 
+private struct ColorCubeData {
+  let dimension: Int
+  let data: Data
+}
+
 @objc(AuraFilteredVideoView)
 final class AuraFilteredVideoView: UIView {
   @objc var sourceUri: NSString? {
@@ -97,6 +102,8 @@ final class AuraFilteredVideoView: UIView {
   private var currentFilterId = "original"
   private var currentMatrix = identityColorMatrix
   private var currentIntensity: CGFloat = 1
+  private var lutCache: [String: ColorCubeData] = [:]
+  private let lutCacheLock = NSLock()
   private var scheduledFrameRefresh: DispatchWorkItem?
   private var isRefreshingCurrentFrame = false
   private var needsAnotherFrameRefresh = false
@@ -289,6 +296,10 @@ final class AuraFilteredVideoView: UIView {
       return applyArcticFilter(to: image, intensity: clampedIntensity, time: time)
     case "sunset":
       return applySunsetFilter(to: image, intensity: clampedIntensity)
+    case "emerald":
+      return applyLUTFilter(to: image, lutName: "emerald", intensity: clampedIntensity)
+    case "lavender":
+      return applyLUTFilter(to: image, lutName: "lavender", intensity: clampedIntensity)
     default:
       return applyColorMatrixFilter(
         to: image,
@@ -380,6 +391,113 @@ final class AuraFilteredVideoView: UIView {
     clampFilter.setValue(CIVector(x: 1, y: 1, z: 1, w: 1), forKey: "inputMaxComponents")
 
     return clampFilter.outputImage ?? matrixOutput
+  }
+
+  private func applyLUTFilter(
+    to image: CIImage,
+    lutName: String,
+    intensity: CGFloat
+  ) -> CIImage {
+    guard
+      let cubeData = loadColorCube(named: lutName),
+      let colorCubeFilter = CIFilter(name: "CIColorCube")
+    else {
+      return image
+    }
+
+    colorCubeFilter.setValue(image, forKey: kCIInputImageKey)
+    colorCubeFilter.setValue(cubeData.dimension, forKey: "inputCubeDimension")
+    colorCubeFilter.setValue(cubeData.data, forKey: "inputCubeData")
+
+    let filteredImage = (colorCubeFilter.outputImage ?? image).cropped(to: image.extent)
+    return blendFilteredImage(image, with: filteredImage, intensity: intensity)
+  }
+
+  private func loadColorCube(named lutName: String) -> ColorCubeData? {
+    lutCacheLock.lock()
+    if let cached = lutCache[lutName] {
+      lutCacheLock.unlock()
+      return cached
+    }
+    lutCacheLock.unlock()
+
+    guard
+      let lutURL = Bundle.main.url(forResource: lutName, withExtension: "cube", subdirectory: "luts"),
+      let cubeData = parseCubeFile(at: lutURL)
+    else {
+      return nil
+    }
+
+    lutCacheLock.lock()
+    lutCache[lutName] = cubeData
+    lutCacheLock.unlock()
+    return cubeData
+  }
+
+  private func parseCubeFile(at url: URL) -> ColorCubeData? {
+    guard let rawContents = try? String(contentsOf: url, encoding: .utf8) else {
+      return nil
+    }
+
+    var dimension: Int?
+    var cubeValues: [Float] = []
+
+    for rawLine in rawContents.components(separatedBy: .newlines) {
+      let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !line.isEmpty, !line.hasPrefix("#") else {
+        continue
+      }
+
+      if line.hasPrefix("TITLE") {
+        continue
+      }
+
+      if line.hasPrefix("LUT_3D_SIZE") {
+        let components = line.split(whereSeparator: \.isWhitespace)
+        guard
+          let rawSize = components.last,
+          let parsedDimension = Int(rawSize)
+        else {
+          return nil
+        }
+
+        dimension = parsedDimension
+        continue
+      }
+
+      let components = line.split(whereSeparator: \.isWhitespace)
+      guard components.count >= 3 else {
+        continue
+      }
+
+      guard
+        let red = Float(components[0]),
+        let green = Float(components[1]),
+        let blue = Float(components[2])
+      else {
+        return nil
+      }
+
+      cubeValues.append(red)
+      cubeValues.append(green)
+      cubeValues.append(blue)
+      cubeValues.append(1)
+    }
+
+    guard
+      let resolvedDimension = dimension,
+      resolvedDimension > 1
+    else {
+      return nil
+    }
+
+    let expectedValueCount = resolvedDimension * resolvedDimension * resolvedDimension * 4
+    guard cubeValues.count == expectedValueCount else {
+      return nil
+    }
+
+    let data = cubeValues.withUnsafeBufferPointer { Data(buffer: $0) }
+    return ColorCubeData(dimension: resolvedDimension, data: data)
   }
 
   private func applyCinematicFilter(to image: CIImage, intensity: CGFloat) -> CIImage {

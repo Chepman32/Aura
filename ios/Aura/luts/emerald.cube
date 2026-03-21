@@ -1,0 +1,14 @@
+TITLE "Emerald"
+LUT_3D_SIZE 2
+
+# Input: R G B (ranging 0.0 to 1.0)
+# Lush green tint: greens boosted, reds subdued, cyan shadows
+
+0.000 0.040 0.030
+0.780 0.100 0.030
+0.000 1.150 0.030
+0.780 1.000 0.030
+0.000 0.040 0.930
+0.780 0.100 0.930
+0.000 1.000 0.930
+0.780 1.000 0.930
