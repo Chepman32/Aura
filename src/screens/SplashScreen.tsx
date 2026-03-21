@@ -12,7 +12,6 @@ import Animated, {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../app/navigation/types';
-import { requestMediaLibrary } from '../services/permissions';
 import { colors } from '../theme';
 import { SPRING_BOUNCY } from '../theme/animations';
 
@@ -21,7 +20,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 /**
  * Splash screen with animated "AURA" text.
  * Uses Reanimated (not Skia) for reliability.
- * Silently requests photo library permissions during the animation.
  */
 export default function SplashScreen({ navigation }: Props): React.JSX.Element {
   const navigated = useRef(false);
@@ -31,11 +29,6 @@ export default function SplashScreen({ navigation }: Props): React.JSX.Element {
     navigated.current = true;
     navigation.replace('Home');
   }, [navigation]);
-
-  // Silently request permissions during animation
-  useEffect(() => {
-    requestMediaLibrary().catch(() => {});
-  }, []);
 
   // Animation values
   const titleOpacity = useSharedValue(0);

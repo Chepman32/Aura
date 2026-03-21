@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Splash: undefined;
   Home: undefined;
-  Editor: { videoUri: string };
+  Editor: { projectId: string };
   Export: { videoUri: string; filterId: string; intensity: number };
   Settings: undefined;
 };

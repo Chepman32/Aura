@@ -47,10 +47,7 @@ export default function RootNavigator(): React.JSX.Element {
         name="Home"
         component={HomeScreen}
         options={{
-          headerShown: true,
-          title: 'Home',
-          // Default react-navigation back button — matches global CLAUDE.md rule.
-          headerBackVisible: true,
+          headerShown: false,
         }}
       />
       <Stack.Screen

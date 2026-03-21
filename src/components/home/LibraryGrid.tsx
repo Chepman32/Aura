@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { useAnimatedReaction, runOnJS } from 'react-native-reanimated';
@@ -8,8 +8,7 @@ import { useHaptics } from '../../hooks/useHaptics';
 import LibraryCard from './LibraryCard';
 import SkeletonLoader from '../shared/SkeletonLoader';
 import type { VideoItem } from '../../store/useLibraryStore';
-import { colors } from '../../theme';
-import { HEADER_CONTENT_HEIGHT } from './BlurHeader';
+import { colors, spacing } from '../../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface LibraryGridProps {
@@ -18,6 +17,8 @@ interface LibraryGridProps {
   hasNextPage: boolean;
   onLoadMore: () => void;
   onVideoPress: (uri: string) => void;
+  topInset?: number;
+  bottomInset?: number;
 }
 
 /**
@@ -43,6 +44,8 @@ export default function LibraryGrid({
   hasNextPage,
   onLoadMore,
   onVideoPress,
+  topInset = 0,
+  bottomInset,
 }: LibraryGridProps): React.JSX.Element {
   const { columns, pinchGesture } = usePinchToResize();
   const haptics = useHaptics();
@@ -72,8 +75,6 @@ export default function LibraryGrid({
     },
     [handleColumnChange],
   );
-
-  const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
   const renderItem = useCallback(
     ({ item }: { item: VideoItem }) => (
@@ -121,8 +122,8 @@ export default function LibraryGrid({
         columnWrapperStyle={columnCount > 1 ? styles.columnWrapper : undefined}
         contentContainerStyle={[
           styles.listContent,
-          { paddingTop: headerHeight + 8 },
-          { paddingBottom: insets.bottom + 16 },
+          { paddingTop: topInset },
+          { paddingBottom: bottomInset ?? insets.bottom + spacing.md },
         ]}
         ItemSeparatorComponent={() => <View style={styles.rowGap} />}
         onEndReached={handleEndReached}

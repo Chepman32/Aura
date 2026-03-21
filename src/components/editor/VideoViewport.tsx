@@ -86,6 +86,17 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
     setMuted(!isMuted);
   }, [isMuted, setMuted]);
 
+  const handleAndroidLoad = useCallback(
+    (duration: number) => {
+      onLoad(duration);
+
+      if (seekRequestId > 0 && requestedSeekTime > 0) {
+        seek(requestedSeekTime);
+      }
+    },
+    [onLoad, requestedSeekTime, seek, seekRequestId],
+  );
+
   useEffect(() => {
     if (Platform.OS !== 'ios' && seekRequestId > 0) {
       seek(requestedSeekTime);
@@ -124,7 +135,7 @@ export default function VideoViewport({ height }: VideoViewportProps): React.JSX
                 paused={!isPlaying}
                 muted={isMuted}
                 repeat
-                onLoad={({ duration }) => onLoad(duration)}
+                onLoad={({ duration }) => handleAndroidLoad(duration)}
                 onProgress={({ currentTime }) => onProgress(currentTime)}
                 onEnd={onEnd}
               />

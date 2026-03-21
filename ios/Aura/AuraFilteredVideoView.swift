@@ -1363,6 +1363,9 @@ final class AuraFilteredVideoView: UIView {
       let duration = observedItem.duration.seconds.isFinite ? observedItem.duration.seconds : 0
       DispatchQueue.main.async {
         self.onLoad?(["duration": duration])
+        if self.seekRequestId.intValue > 0 || self.seekToTime.doubleValue > 0 {
+          self.seekIfNeeded()
+        }
         self.updatePlaybackState()
         self.refreshCurrentFrameIfPaused()
       }
@@ -1428,6 +1431,108 @@ final class AuraFilteredVideoView: UIView {
     default:
       playerLayer.videoGravity = .resizeAspectFill
     }
+  }
+}
+
+private enum AuraProjectPreviewError: LocalizedError {
+  case assetUnavailable
+  case imageGenerationFailed
+  case jpegEncodingFailed
+  case outputDirectoryUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .assetUnavailable:
+      return "The source video could not be loaded."
+    case .imageGenerationFailed:
+      return "Aura could not render a preview image."
+    case .jpegEncodingFailed:
+      return "Aura could not encode the preview image."
+    case .outputDirectoryUnavailable:
+      return "Aura could not prepare the preview output directory."
+    }
+  }
+}
+
+extension AuraFilteredVideoView {
+  func generateProjectPreview(
+    projectId: String,
+    sourceUri: String,
+    filterId: String,
+    filterMatrixPayload: String,
+    filterIntensity: CGFloat,
+    timeMs: Double
+  ) async throws -> String {
+    self.filterId = filterId as NSString
+    self.filterMatrixPayload = filterMatrixPayload as NSString
+    self.filterIntensity = NSNumber(value: Double(max(0, min(filterIntensity, 1))))
+    updateFilterState()
+
+    guard let asset = await loadAsset(from: sourceUri) else {
+      throw AuraProjectPreviewError.assetUnavailable
+    }
+
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.requestedTimeToleranceBefore = .zero
+    generator.requestedTimeToleranceAfter = .zero
+
+    let time = CMTime(
+      seconds: max(0, timeMs / 1000),
+      preferredTimescale: 600
+    )
+
+    let rawImage = try generator.copyCGImage(at: time, actualTime: nil)
+    let sourceImage = CIImage(cgImage: rawImage)
+    let filtered = filteredImage(
+      for: sourceImage.clampedToExtent(),
+      time: max(0, timeMs / 1000)
+    ).cropped(to: sourceImage.extent)
+
+    guard let outputImage = ciContext.createCGImage(filtered, from: filtered.extent) else {
+      throw AuraProjectPreviewError.imageGenerationFailed
+    }
+
+    let previewImage = UIImage(cgImage: outputImage)
+    guard let jpegData = previewImage.jpegData(compressionQuality: 0.9) else {
+      throw AuraProjectPreviewError.jpegEncodingFailed
+    }
+
+    let outputURL = try makeProjectPreviewURL(projectId: projectId)
+    try jpegData.write(to: outputURL, options: .atomic)
+    return outputURL.path
+  }
+
+  private func makeProjectPreviewURL(projectId: String) throws -> URL {
+    let fileManager = FileManager.default
+    guard let documentsDirectory = fileManager.urls(
+      for: .documentDirectory,
+      in: .userDomainMask
+    ).first else {
+      throw AuraProjectPreviewError.outputDirectoryUnavailable
+    }
+
+    let previewDirectory = documentsDirectory.appendingPathComponent(
+      "project-previews",
+      isDirectory: true
+    )
+
+    if !fileManager.fileExists(atPath: previewDirectory.path) {
+      try fileManager.createDirectory(
+        at: previewDirectory,
+        withIntermediateDirectories: true
+      )
+    }
+
+    let sanitizedProjectId = projectId.replacingOccurrences(
+      of: "[^a-zA-Z0-9_-]",
+      with: "_",
+      options: .regularExpression
+    )
+
+    return previewDirectory.appendingPathComponent(
+      "\(sanitizedProjectId)_\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
+    )
   }
 }
 

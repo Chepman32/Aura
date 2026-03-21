@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -14,6 +14,7 @@ import { runOnJS } from 'react-native-reanimated';
 
 import type { RootStackParamList } from '../app/navigation/types';
 import { useEditorStore } from '../store/useEditorStore';
+import { useProjectStore } from '../store/useProjectStore';
 import VideoViewport from '../components/editor/VideoViewport';
 import AuraRibbon from '../components/editor/AuraRibbon';
 import IntensitySlider from '../components/editor/IntensitySlider';
@@ -27,11 +28,20 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Editor'>;
 const VIEWPORT_RATIO = 0.50;
 
 export default function EditorScreen({ route, navigation }: Props): React.JSX.Element {
-  const { videoUri } = route.params;
+  const { projectId } = route.params;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
+  const project = useProjectStore((state) =>
+    state.projects.find((item) => item.id === projectId),
+  );
+  const updateProjectSession = useProjectStore((state) => state.updateProjectSession);
+  const refreshProjectPreview = useProjectStore((state) => state.refreshProjectPreview);
   const setVideoUri = useEditorStore((s) => s.setVideoUri);
+  const setActiveFilter = useEditorStore((s) => s.setActiveFilter);
+  const setFilterIntensity = useEditorStore((s) => s.setFilterIntensity);
+  const setCurrentTime = useEditorStore((s) => s.setCurrentTime);
+  const setDuration = useEditorStore((s) => s.setDuration);
   const activeFilterId = useEditorStore((s) => s.activeFilterId);
   const filterIntensity = useEditorStore((s) => s.filterIntensity);
   const isPlaying = useEditorStore((s) => s.isPlaying);
@@ -43,13 +53,85 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
 
   const [sliderVisible, setSliderVisible] = useState(false);
   const [timelineWidth, setTimelineWidth] = useState(0);
+  const hydratedProjectId = useRef<string | null>(null);
 
   useEffect(() => {
-    setVideoUri(videoUri);
+    if (!project || hydratedProjectId.current === projectId) {
+      return;
+    }
+
+    hydratedProjectId.current = projectId;
+    const savedTimeSeconds = project.previewTimeMs / 1000;
+
+    setVideoUri(project.sourceVideoUri);
+    setActiveFilter(project.filterId);
+    setFilterIntensity(project.filterIntensity);
+    setCurrentTime(savedTimeSeconds);
+    setDuration(project.duration);
+    if (savedTimeSeconds > 0) {
+      requestSeek(savedTimeSeconds);
+    }
+
     return () => {
+      hydratedProjectId.current = null;
       reset();
     };
-  }, [videoUri, setVideoUri, reset]);
+  }, [
+    project,
+    projectId,
+    requestSeek,
+    reset,
+    setActiveFilter,
+    setCurrentTime,
+    setDuration,
+    setFilterIntensity,
+    setVideoUri,
+  ]);
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+
+    const previewTimeMs = Math.round(currentTime * 1000);
+    const timeoutId = setTimeout(() => {
+      updateProjectSession(projectId, {
+        filterId: activeFilterId,
+        filterIntensity,
+        previewTimeMs,
+      });
+    }, 350);
+
+    return () => clearTimeout(timeoutId);
+  }, [
+    activeFilterId,
+    currentTime,
+    filterIntensity,
+    project,
+    projectId,
+    updateProjectSession,
+  ]);
+
+  useEffect(() => {
+    if (!project) {
+      return;
+    }
+
+    const unsubscribe = navigation.addListener('blur', () => {
+      const latestState = useEditorStore.getState();
+      const previewTimeMs = Math.round(latestState.currentTime * 1000);
+
+      updateProjectSession(projectId, {
+        filterId: latestState.activeFilterId,
+        filterIntensity: latestState.filterIntensity,
+        previewTimeMs,
+      });
+
+      refreshProjectPreview(projectId, previewTimeMs).catch(() => {});
+    });
+
+    return unsubscribe;
+  }, [navigation, project, projectId, refreshProjectPreview, updateProjectSession]);
 
   const viewportHeight = screenHeight * VIEWPORT_RATIO;
   const activeFilter = getFilterById(activeFilterId);
@@ -63,12 +145,16 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   }, [isPlaying, setIsPlaying]);
 
   const handleExport = useCallback(() => {
+    if (!project) {
+      return;
+    }
+
     navigation.navigate('Export', {
-      videoUri,
+      videoUri: project.sourceVideoUri,
       filterId: activeFilterId,
       intensity: filterIntensity,
     });
-  }, [navigation, videoUri, activeFilterId, filterIntensity]);
+  }, [activeFilterId, filterIntensity, navigation, project]);
 
   // Timeline progress ratio
   const progressRatio = duration > 0 ? currentTime / duration : 0;
@@ -107,6 +193,17 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
     });
 
   const timelineGesture = Gesture.Simultaneous(timelinePanGesture, timelineTapGesture);
+
+  if (!project) {
+    return (
+      <View style={styles.missingState}>
+        <Text style={styles.missingStateTitle}>Project Unavailable</Text>
+        <Text style={styles.missingStateBody}>
+          This project could not be loaded. Return to Home and try again.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -191,6 +288,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.black,
+  },
+  missingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  missingStateTitle: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  missingStateBody: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   controlDeck: {
     flex: 1,

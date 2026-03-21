@@ -18,7 +18,7 @@ export const HEADER_CONTENT_HEIGHT = 56;
  * A translucent blur header that stays pinned to the top of the screen.
  * Extends into the safe-area inset so it sits flush with the status bar.
  *
- * - Left: "Library" title in large bold type.
+ * - Left: "Projects" title in large bold type.
  * - Right: Settings gear icon that navigates to the Settings screen.
  */
 export default function BlurHeader(): React.JSX.Element {
@@ -43,7 +43,7 @@ export default function BlurHeader(): React.JSX.Element {
 
       {/* Content row sits below the status-bar safe area */}
       <View style={[styles.contentRow, { marginTop: insets.top }]}>
-        <Text style={styles.title}>Library</Text>
+        <Text style={styles.title}>Projects</Text>
 
         <AnimatedPressable
           onPress={() => navigation.navigate('Settings')}

@@ -1,178 +1,282 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Linking,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../app/navigation/types';
-import { useLibraryStore } from '../store/useLibraryStore';
-import { requestMediaLibrary } from '../services/permissions';
-import type { PermissionStatus } from '../services/permissions';
-import BlurHeader, { HEADER_CONTENT_HEIGHT } from '../components/home/BlurHeader';
-import LibraryGrid from '../components/home/LibraryGrid';
-import SkeletonLoader from '../components/shared/SkeletonLoader';
-import AnimatedPressable from '../components/shared/AnimatedPressable';
+import ProjectDashboardList from '../components/home/ProjectDashboardList';
+import NamePromptModal from '../components/home/NamePromptModal';
+import VideoPickerModal from '../components/home/VideoPickerModal';
+import BlurHeader from '../components/home/BlurHeader';
+import type { VideoItem } from '../store/useLibraryStore';
+import { useProjectStore } from '../store/useProjectStore';
+import type { Project } from '../store/useProjectStore';
 import { colors, spacing, typography } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-/**
- * Home screen — the video library.
- *
- * State machine:
- *   'idle'    → permission check hasn't run yet (very first render)
- *   'loading' → permission granted, first page of videos being fetched
- *   'ready'   → videos loaded (list may be empty)
- *   'denied'  → user dismissed the permission prompt
- *   'blocked' → permission is permanently denied; must go to Settings
- */
-type ScreenState = 'idle' | 'loading' | 'ready' | 'denied' | 'blocked';
+interface PromptState {
+  visible: boolean;
+  mode: 'create-folder' | 'rename-folder' | 'rename-project';
+  targetId: string | null;
+  title: string;
+  description: string;
+  initialValue: string;
+  confirmLabel: string;
+}
+
+const INITIAL_PROMPT_STATE: PromptState = {
+  visible: false,
+  mode: 'create-folder',
+  targetId: null,
+  title: '',
+  description: '',
+  initialValue: '',
+  confirmLabel: 'Save',
+};
+
+function sanitizeName(value: string): string {
+  return value.trim();
+}
 
 export default function HomeScreen({ navigation }: Props): React.JSX.Element {
-  const insets = useSafeAreaInsets();
-  const [screenState, setScreenState] = useState<ScreenState>('idle');
+  const folders = useProjectStore((state) => state.folders);
+  const projects = useProjectStore((state) => state.projects);
+  const trashActivated = useProjectStore((state) => state.trashActivated);
+  const createProject = useProjectStore((state) => state.createProject);
+  const createFolder = useProjectStore((state) => state.createFolder);
+  const renameFolder = useProjectStore((state) => state.renameFolder);
+  const removeFolder = useProjectStore((state) => state.removeFolder);
+  const renameProject = useProjectStore((state) => state.renameProject);
+  const duplicateProject = useProjectStore((state) => state.duplicateProject);
+  const moveProjectToFolder = useProjectStore((state) => state.moveProjectToFolder);
+  const removeProject = useProjectStore((state) => state.removeProject);
+  const recoverProject = useProjectStore((state) => state.recoverProject);
+  const removeProjectPermanently = useProjectStore((state) => state.removeProjectPermanently);
+  const cleanTrash = useProjectStore((state) => state.cleanTrash);
 
-  const { videos, isLoading, hasNextPage, endCursor, fetchVideos, reset } =
-    useLibraryStore();
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [promptState, setPromptState] = useState<PromptState>(INITIAL_PROMPT_STATE);
 
-  // Guard against double-invoke in StrictMode / fast-refresh.
-  const didMount = useRef(false);
-
-  useEffect(() => {
-    if (didMount.current) return;
-    didMount.current = true;
-
-    void bootstrap();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function bootstrap(): Promise<void> {
-    const status: PermissionStatus = await requestMediaLibrary();
-
-    if (status === 'granted') {
-      reset(); // clear any stale data from a previous session
-      setScreenState('loading');
-      await fetchVideos(); // first page — no cursor
-      setScreenState('ready');
-    } else if (status === 'blocked') {
-      setScreenState('blocked');
-    } else {
-      setScreenState('denied');
-    }
-  }
-
-  const handleLoadMore = useCallback(() => {
-    if (!isLoading && hasNextPage && endCursor) {
-      void fetchVideos(endCursor);
-    }
-  }, [isLoading, hasNextPage, endCursor, fetchVideos]);
-
-  const handleVideoPress = useCallback(
-    (videoUri: string) => {
-      navigation.navigate('Editor', { videoUri });
-    },
-    [navigation],
+  const projectIndex = useMemo(
+    () =>
+      projects.reduce<Record<string, Project>>((accumulator, project) => {
+        accumulator[project.id] = project;
+        return accumulator;
+      }, {}),
+    [projects],
   );
 
-  const handleOpenSettings = useCallback(() => {
-    void Linking.openSettings();
+  const closePrompt = useCallback(() => {
+    setPromptState(INITIAL_PROMPT_STATE);
   }, []);
 
-  // ─── Render helpers ────────────────────────────────────────────────────────
+  const handleOpenFolderPrompt = useCallback((folderId?: string) => {
+    const folder = folderId ? folders.find((item) => item.id === folderId) : undefined;
+    setPromptState({
+      visible: true,
+      mode: folder ? 'rename-folder' : 'create-folder',
+      targetId: folder?.id ?? null,
+      title: folder ? 'Rename Folder' : 'New Folder',
+      description: folder
+        ? 'Choose a clear folder name for your project group.'
+        : 'Create a folder to organize projects on the home screen.',
+      initialValue: folder?.name ?? 'New Folder',
+      confirmLabel: folder ? 'Rename' : 'Create',
+    });
+  }, [folders]);
 
-  function renderContent(): React.JSX.Element {
-    const headerHeight = insets.top + HEADER_CONTENT_HEIGHT;
+  const handleOpenProjectRenamePrompt = useCallback((project: Project) => {
+    setPromptState({
+      visible: true,
+      mode: 'rename-project',
+      targetId: project.id,
+      title: 'Rename Project',
+      description: 'Update the project name shown on the home screen.',
+      initialValue: project.name,
+      confirmLabel: 'Rename',
+    });
+  }, []);
 
-    // First-load skeleton
-    if (screenState === 'loading') {
-      return (
-        <View
-          style={[
-            styles.centeredContent,
-            { paddingTop: headerHeight + spacing.sm },
-          ]}
-        >
-          <SkeletonLoader count={9} columns={3} />
-        </View>
-      );
+  const handleConfirmPrompt = useCallback(
+    (rawValue: string) => {
+      const nextName = sanitizeName(rawValue);
+      if (!nextName) {
+        Alert.alert('Name Required', 'Please enter a non-empty name.');
+        return;
+      }
+
+      if (promptState.mode === 'create-folder') {
+        createFolder(nextName);
+      } else if (promptState.mode === 'rename-folder' && promptState.targetId) {
+        renameFolder(promptState.targetId, nextName);
+      } else if (promptState.mode === 'rename-project' && promptState.targetId) {
+        renameProject(promptState.targetId, nextName);
+      }
+
+      closePrompt();
+    },
+    [
+      closePrompt,
+      createFolder,
+      promptState.mode,
+      promptState.targetId,
+      renameFolder,
+      renameProject,
+    ],
+  );
+
+  const handleCreateAction = useCallback((actionId: 'new-project' | 'new-folder') => {
+    if (actionId === 'new-folder') {
+      handleOpenFolderPrompt();
+      return;
     }
 
-    // Permission blocked — must open Settings to grant access
-    if (screenState === 'blocked') {
-      return (
-        <View style={styles.stateContainer}>
-          <Text style={styles.stateTitle}>No Access</Text>
-          <Text style={styles.stateBody}>
-            Aura needs permission to read your video library. Enable it in
-            Settings.
-          </Text>
-          <AnimatedPressable
-            onPress={handleOpenSettings}
-            style={styles.primaryButton}
-            accessibilityRole="button"
-            accessibilityLabel="Open Settings"
-          >
-            <Text style={styles.primaryButtonText}>Open Settings</Text>
-          </AnimatedPressable>
-        </View>
-      );
-    }
+    setPickerVisible(true);
+  }, [handleOpenFolderPrompt]);
 
-    // Permission denied (can ask again)
-    if (screenState === 'denied') {
-      return (
-        <View style={styles.stateContainer}>
-          <Text style={styles.stateTitle}>Permission Required</Text>
-          <Text style={styles.stateBody}>
-            Allow Aura to access your videos to build your library.
-          </Text>
-          <AnimatedPressable
-            onPress={() => {
-              didMount.current = false;
-              void bootstrap();
-            }}
-            style={styles.primaryButton}
-            accessibilityRole="button"
-            accessibilityLabel="Grant Access"
-          >
-            <Text style={styles.primaryButtonText}>Grant Access</Text>
-          </AnimatedPressable>
-        </View>
-      );
-    }
+  const handleSelectVideo = useCallback(
+    (video: VideoItem) => {
+      const project = createProject({
+        sourceVideoUri: video.uri,
+        duration: video.duration,
+        filename: video.filename,
+      });
 
-    // Ready but empty
-    if (screenState === 'ready' && videos.length === 0) {
-      return (
-        <View style={styles.stateContainer}>
-          <Text style={styles.stateTitle}>No Videos Found</Text>
-          <Text style={styles.stateBody}>
-            Record some videos and they will appear here automatically.
-          </Text>
-        </View>
-      );
-    }
+      setPickerVisible(false);
+      navigation.navigate('Editor', { projectId: project.id });
+    },
+    [createProject, navigation],
+  );
 
-    // Normal grid
-    return (
-      <LibraryGrid
-        videos={videos}
-        isLoading={isLoading}
-        hasNextPage={hasNextPage}
-        onLoadMore={handleLoadMore}
-        onVideoPress={handleVideoPress}
-      />
-    );
-  }
+  const handleProjectPress = useCallback(
+    (projectId: string) => {
+      const project = projectIndex[projectId];
+      if (!project || project.status === 'trash') {
+        return;
+      }
+
+      navigation.navigate('Editor', { projectId });
+    },
+    [navigation, projectIndex],
+  );
+
+  const handleProjectAction = useCallback(
+    (project: Project, action: 'rename' | 'duplicate' | 'remove' | 'recover' | 'remove-permanently' | { type: 'move'; folderId: string }) => {
+      if (typeof action === 'object' && action.type === 'move') {
+        moveProjectToFolder(project.id, action.folderId);
+        return;
+      }
+
+      switch (action) {
+        case 'rename':
+          handleOpenProjectRenamePrompt(project);
+          break;
+        case 'duplicate':
+          duplicateProject(project.id);
+          break;
+        case 'remove':
+          removeProject(project.id);
+          break;
+        case 'recover':
+          recoverProject(project.id);
+          break;
+        case 'remove-permanently':
+          Alert.alert(
+            'Remove Permanently',
+            `Delete "${project.name}" forever?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Remove',
+                style: 'destructive',
+                onPress: () => removeProjectPermanently(project.id),
+              },
+            ],
+          );
+          break;
+      }
+    },
+    [
+      duplicateProject,
+      handleOpenProjectRenamePrompt,
+      moveProjectToFolder,
+      recoverProject,
+      removeProject,
+      removeProjectPermanently,
+    ],
+  );
+
+  const handleFolderAction = useCallback(
+    (
+      section: {
+        id: string;
+        title: string;
+        kind: 'all' | 'folder' | 'trash';
+      },
+      action: 'rename' | 'remove' | 'clean-trash',
+    ) => {
+      if (action === 'rename') {
+        handleOpenFolderPrompt(section.id);
+        return;
+      }
+
+      if (action === 'remove') {
+        removeFolder(section.id);
+        return;
+      }
+
+      Alert.alert(
+        'Clean Trash',
+        'Remove every project in Trash permanently?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clean Trash',
+            style: 'destructive',
+            onPress: () => cleanTrash(),
+          },
+        ],
+      );
+    },
+    [cleanTrash, handleOpenFolderPrompt, removeFolder],
+  );
 
   return (
     <View style={styles.root}>
-      {renderContent()}
-      {/* BlurHeader is rendered last so it paints on top of everything */}
+      <ProjectDashboardList
+        folders={folders}
+        projects={projects}
+        trashActivated={trashActivated}
+        onProjectPress={handleProjectPress}
+        onCreateAction={handleCreateAction}
+        onProjectAction={handleProjectAction}
+        onFolderAction={handleFolderAction}
+      />
       <BlurHeader />
+
+      {projects.length === 0 && folders.length === 0 ? (
+        <View style={styles.emptyOverlay} pointerEvents="none">
+          <Text style={styles.emptyTitle}>Start Your First Project</Text>
+          <Text style={styles.emptyBody}>
+            Tap the + button to create a project from a video or make a folder first.
+          </Text>
+        </View>
+      ) : null}
+
+      <VideoPickerModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        onSelectVideo={handleSelectVideo}
+      />
+
+      <NamePromptModal
+        visible={promptState.visible}
+        title={promptState.title}
+        description={promptState.description}
+        initialValue={promptState.initialValue}
+        confirmLabel={promptState.confirmLabel}
+        onCancel={closePrompt}
+        onConfirm={handleConfirmPrompt}
+      />
     </View>
   );
 }
@@ -182,39 +286,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  centeredContent: {
-    flex: 1,
-  },
-  // ── Empty / error state ───────────────────────────────────────────────────
-  stateContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  stateTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  stateBody: {
-    ...typography.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  // ── CTA button ────────────────────────────────────────────────────────────
-  primaryButton: {
-    backgroundColor: colors.surfaceLight,
-    borderRadius: 14,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
+  emptyOverlay: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    top: 132,
+    padding: spacing.lg,
+    borderRadius: 20,
+    backgroundColor: 'rgba(20,20,20,0.74)',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  primaryButtonText: {
-    ...typography.bodyMedium,
+  emptyTitle: {
+    ...typography.subtitle,
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  emptyBody: {
+    ...typography.body,
+    color: colors.textSecondary,
   },
 });
