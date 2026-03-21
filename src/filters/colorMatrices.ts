@@ -80,14 +80,23 @@ export const COLOR_MATRICES: Record<string, number[]> = {
   ],
 
   /**
-   * arctic — cool blue-tinted with lifted exposure.
-   * Reds pulled back, blues boosted, overall brightness raised to evoke
-   * ice and open sky.
+   * neon — electric cyan/blue glow fallback for non-native paths.
    */
-  arctic: [
+  neon: [
     0.85,  0.02, -0.02, 0,  0.02,
     0.02,  0.92,  0.06, 0,  0.03,
     0.05,  0.05,  1.18, 0,  0.05,
+    0,     0,     0,    1,  0,
+  ],
+
+  /**
+   * arctic — restrained cool desaturation fallback approximation.
+   * The real iOS preview uses a native frosted-glass recipe.
+   */
+  arctic: [
+    0.88,  0.04,  0.01, 0,  0.01,
+    0.01,  0.92,  0.05, 0,  0.02,
+    0.03,  0.07,  1.02, 0,  0.04,
     0,     0,     0,    1,  0,
   ],
 

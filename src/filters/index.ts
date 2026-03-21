@@ -39,9 +39,16 @@ export const FILTERS: Filter[] = [
     lutFile: 'noir.cube',
   },
   {
+    id: 'neon',
+    name: 'Neon',
+    dominantColor: '#6BE7FF',
+    colorMatrix: COLOR_MATRICES.neon,
+    lutFile: null,
+  },
+  {
     id: 'arctic',
     name: 'Arctic',
-    dominantColor: '#87CEEB',
+    dominantColor: '#D7E7F5',
     colorMatrix: COLOR_MATRICES.arctic,
     lutFile: 'arctic.cube',
   },
