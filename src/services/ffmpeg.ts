@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 
 import { getOutputPath } from './fileSystem';
+import type { ExportFormatId } from '../store/useSettingsStore';
 
 export type ProgressCallback = (progress: number) => void;
 
@@ -14,6 +15,7 @@ interface NativeVideoExportModule {
     filterId: string,
     filterMatrixPayload: string,
     filterIntensity: number,
+    exportFormat: ExportFormatId,
   ) => Promise<string>;
   cancelExport: () => Promise<void>;
 }
@@ -32,6 +34,7 @@ export async function executeExport(
   filterId: string,
   filterMatrix: ReadonlyArray<number>,
   intensity: number,
+  exportFormat: ExportFormatId,
   onProgress?: ProgressCallback,
 ): Promise<string> {
   if (Platform.OS === 'ios' && nativeExporter?.exportVideo) {
@@ -40,11 +43,12 @@ export async function executeExport(
       filterId,
       filterMatrix,
       intensity,
+      exportFormat,
       onProgress,
     );
   }
 
-  return simulateExport(inputUri, onProgress);
+  return simulateExport(inputUri, exportFormat, onProgress);
 }
 
 export async function cancelExport(): Promise<void> {
@@ -65,6 +69,7 @@ async function executeNativeExport(
   filterId: string,
   filterMatrix: ReadonlyArray<number>,
   intensity: number,
+  exportFormat: ExportFormatId,
   onProgress?: ProgressCallback,
 ): Promise<string> {
   const emitter = getExporterEmitter();
@@ -85,6 +90,7 @@ async function executeNativeExport(
       filterId,
       filterMatrix.join(','),
       intensity,
+      exportFormat,
     );
 
     onProgress?.(1);
@@ -109,10 +115,11 @@ function getExporterEmitter(): NativeEventEmitter | null {
 }
 
 function simulateExport(
-  inputUri: string,
+  _inputUri: string,
+  exportFormat: ExportFormatId,
   onProgress?: ProgressCallback,
 ): Promise<string> {
-  const outputPath = getOutputPath('mp4');
+  const outputPath = getOutputPath(exportFormat === 'hevc' ? 'mov' : 'mp4');
   fallbackCancelled = false;
 
   return new Promise<string>((resolve, reject) => {
@@ -136,7 +143,7 @@ function simulateExport(
         }
         fallbackTimer = null;
         onProgress?.(1);
-        resolve(normalizeOutputPath(inputUri || outputPath));
+        resolve(normalizeOutputPath(outputPath));
         return;
       }
 

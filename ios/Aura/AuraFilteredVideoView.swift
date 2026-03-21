@@ -1700,6 +1700,7 @@ enum AuraVideoExportError: LocalizedError {
   case assetUnavailable
   case exportSessionUnavailable
   case unsupportedFileType
+  case unsupportedExportPreset
   case exportCancelled
   case exportFailed(String)
 
@@ -1711,6 +1712,8 @@ enum AuraVideoExportError: LocalizedError {
       return "Aura could not start the export session."
     case .unsupportedFileType:
       return "Aura could not prepare an exportable video format."
+    case .unsupportedExportPreset:
+      return "Aura could not prepare the selected export format."
     case .exportCancelled:
       return "Export cancelled."
     case let .exportFailed(message):
@@ -1720,28 +1723,48 @@ enum AuraVideoExportError: LocalizedError {
 }
 
 extension AuraFilteredVideoView {
+  private enum ExportFormat {
+    case mp4
+    case hevc
+
+    init(rawValue: String) {
+      switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+      case "hevc":
+        self = .hevc
+      default:
+        self = .mp4
+      }
+    }
+  }
+
   func makeExportSession(
     sourceUri: String,
     filterId: String,
     filterMatrixPayload: String,
-    filterIntensity: CGFloat
+    filterIntensity: CGFloat,
+    exportFormat: String
   ) async throws -> (session: AVAssetExportSession, outputURL: URL) {
     let exportFilterId = filterId.trimmingCharacters(in: .whitespacesAndNewlines)
     let exportMatrix = parseFilterMatrixPayload(filterMatrixPayload) ?? identityColorMatrix
     let exportIntensity = max(0, min(filterIntensity, 1))
+    let selectedFormat = ExportFormat(rawValue: exportFormat)
 
     guard let asset = await loadAsset(from: sourceUri) else {
       throw AuraVideoExportError.assetUnavailable
     }
 
+    let presetName = try preferredExportPreset(for: selectedFormat, asset: asset)
     guard let exportSession = AVAssetExportSession(
       asset: asset,
-      presetName: AVAssetExportPresetHighestQuality
+      presetName: presetName
     ) else {
       throw AuraVideoExportError.exportSessionUnavailable
     }
 
-    let outputFileType = try preferredExportFileType(for: exportSession)
+    let outputFileType = try preferredExportFileType(
+      for: exportSession,
+      format: selectedFormat
+    )
     let outputURL = makeTemporaryExportURL(fileType: outputFileType)
 
     exportSession.outputURL = outputURL
@@ -1839,13 +1862,38 @@ extension AuraFilteredVideoView {
     )
   }
 
-  private func preferredExportFileType(for session: AVAssetExportSession) throws -> AVFileType {
-    if session.supportedFileTypes.contains(.mp4) {
-      return .mp4
+  private func preferredExportPreset(
+    for format: ExportFormat,
+    asset: AVAsset
+  ) throws -> String {
+    switch format {
+    case .mp4:
+      return AVAssetExportPresetHighestQuality
+    case .hevc:
+      let hevcPreset = AVAssetExportPresetHEVCHighestQuality
+      if AVAssetExportSession.exportPresets(compatibleWith: asset).contains(hevcPreset) {
+        return hevcPreset
+      }
+      throw AuraVideoExportError.unsupportedExportPreset
     }
+  }
 
-    if session.supportedFileTypes.contains(.mov) {
-      return .mov
+  private func preferredExportFileType(
+    for session: AVAssetExportSession,
+    format: ExportFormat
+  ) throws -> AVFileType {
+    switch format {
+    case .mp4:
+      if session.supportedFileTypes.contains(.mp4) {
+        return .mp4
+      }
+      if session.supportedFileTypes.contains(.mov) {
+        return .mov
+      }
+    case .hevc:
+      if session.supportedFileTypes.contains(.mov) {
+        return .mov
+      }
     }
 
     throw AuraVideoExportError.unsupportedFileType

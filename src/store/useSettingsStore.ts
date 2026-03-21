@@ -7,14 +7,16 @@ import { DEFAULT_THEME_ID, type AppThemeId } from '../theme/palettes';
 // Types
 // ---------------------------------------------------------------------------
 
+export type ExportFormatId = 'mp4' | 'hevc';
+
 interface SettingsState {
-  defaultIntensity: number;
   themeId: AppThemeId;
+  exportFormat: ExportFormatId;
 }
 
 interface SettingsActions {
-  setDefaultIntensity: (intensity: number) => void;
   setThemeId: (themeId: AppThemeId) => void;
+  setExportFormat: (exportFormat: ExportFormatId) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,28 +27,27 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
   persist(
     (set) => ({
       // State
-      defaultIntensity: 1.0,
       themeId: DEFAULT_THEME_ID,
+      exportFormat: 'mp4',
 
       // Actions
-      setDefaultIntensity: (intensity) =>
-        set({ defaultIntensity: intensity }),
       setThemeId: (themeId) => set({ themeId }),
+      setExportFormat: (exportFormat) => set({ exportFormat }),
     }),
     {
       name: 'aura-settings',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => createFileStorage()),
       partialize: (state) => ({
-        defaultIntensity: state.defaultIntensity,
         themeId: state.themeId,
+        exportFormat: state.exportFormat,
       }),
       migrate: (persistedState) => {
         const state = (persistedState as Partial<SettingsState> | undefined) ?? {};
 
         return {
-          defaultIntensity: state.defaultIntensity ?? 1.0,
           themeId: state.themeId ?? DEFAULT_THEME_ID,
+          exportFormat: state.exportFormat ?? 'mp4',
         };
       },
     },

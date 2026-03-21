@@ -3,7 +3,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Animated, {
@@ -16,7 +15,10 @@ import { Check, ChevronDown } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../app/navigation/types';
-import { useSettingsStore } from '../store/useSettingsStore';
+import {
+  useSettingsStore,
+  type ExportFormatId,
+} from '../store/useSettingsStore';
 import AnimatedPressable from '../components/shared/AnimatedPressable';
 import {
   APP_THEMES,
@@ -42,6 +44,16 @@ const THEME_COPY: Record<AppThemeId, string> = {
   light: 'Neutral daylight surfaces.',
   solar: 'Warm parchment and honey tones.',
   mono: 'Quiet grayscale minimalism.',
+};
+
+const EXPORT_FORMAT_OPTIONS: Array<{ id: ExportFormatId; label: string }> = [
+  { id: 'mp4', label: 'MP4' },
+  { id: 'hevc', label: 'HEVC (.mov)' },
+];
+
+const EXPORT_FORMAT_COPY: Record<ExportFormatId, string> = {
+  mp4: 'Most compatible video export.',
+  hevc: 'Higher-efficiency video in a .mov container.',
 };
 
 function Accordion({ title, children }: AccordionProps) {
@@ -85,20 +97,10 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const theme = useAppTheme();
   const styles = useThemedStyles(createStyles);
-  const defaultIntensity = useSettingsStore((state) => state.defaultIntensity);
-  const setDefaultIntensity = useSettingsStore((state) => state.setDefaultIntensity);
   const themeId = useSettingsStore((state) => state.themeId);
   const setThemeId = useSettingsStore((state) => state.setThemeId);
-
-  const handleIntensityChange = useCallback(
-    (text: string) => {
-      const value = parseInt(text, 10);
-      if (!Number.isNaN(value)) {
-        setDefaultIntensity(Math.max(0, Math.min(100, value)) / 100);
-      }
-    },
-    [setDefaultIntensity],
-  );
+  const exportFormat = useSettingsStore((state) => state.exportFormat);
+  const setExportFormat = useSettingsStore((state) => state.setExportFormat);
 
   return (
     <ScrollView
@@ -169,22 +171,44 @@ export default function SettingsScreen(_props: Props): React.JSX.Element {
         </View>
       </Accordion>
 
-      <Accordion title="Default Intensity">
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Intensity (%)</Text>
-          <TextInput
-            style={styles.input}
-            value={`${Math.round(defaultIntensity * 100)}`}
-            onChangeText={handleIntensityChange}
-            keyboardType="number-pad"
-            maxLength={3}
-            placeholderTextColor={theme.colors.textTertiary}
-            selectionColor={theme.colors.accent}
-          />
+      <Accordion title="Export Format">
+        <View style={styles.optionList}>
+          {EXPORT_FORMAT_OPTIONS.map((option) => {
+            const isSelected = option.id === exportFormat;
+
+            return (
+              <AnimatedPressable
+                key={option.id}
+                onPress={() => setExportFormat(option.id)}
+                style={[
+                  styles.optionCard,
+                  isSelected && styles.optionCardSelected,
+                ]}
+                accessibilityLabel={`Switch export format to ${option.label}`}
+                accessibilityRole="button"
+              >
+                <View style={styles.optionHeaderRow}>
+                  <View style={styles.optionTextWrap}>
+                    <Text style={styles.optionTitle}>{option.label}</Text>
+                    <Text style={styles.optionDescription}>
+                      {EXPORT_FORMAT_COPY[option.id]}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.themeCheck,
+                      isSelected && styles.themeCheckSelected,
+                    ]}
+                  >
+                    {isSelected ? (
+                      <Check size={14} color={theme.colors.accentForeground} strokeWidth={2.4} />
+                    ) : null}
+                  </View>
+                </View>
+              </AnimatedPressable>
+            );
+          })}
         </View>
-        <Text style={styles.hint}>
-          New edits will start at this intensity level.
-        </Text>
       </Accordion>
 
       <Accordion title="About">
@@ -295,34 +319,41 @@ const createStyles = (theme: AppTheme) => {
       color: colors.textSecondary,
       lineHeight: 18,
     },
-    settingRow: {
+    optionList: {
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.md,
+      gap: spacing.sm,
+    },
+    optionCard: {
+      borderRadius: 16,
+      backgroundColor: colors.surfaceLight,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+    },
+    optionCardSelected: {
+      backgroundColor: colors.surfaceLighter,
+      borderColor: colors.accent,
+    },
+    optionHeaderRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingHorizontal: spacing.md,
-      paddingBottom: spacing.sm,
+      gap: spacing.md,
     },
-    settingLabel: {
-      ...typography.body,
-      color: colors.textSecondary,
+    optionTextWrap: {
+      flex: 1,
     },
-    input: {
-      ...typography.body,
+    optionTitle: {
+      ...typography.bodyMedium,
       color: colors.textPrimary,
-      backgroundColor: colors.surfaceLight,
-      borderRadius: 10,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-      width: 72,
-      textAlign: 'center',
-      borderWidth: 1,
-      borderColor: colors.border,
+      marginBottom: 4,
     },
-    hint: {
+    optionDescription: {
       ...typography.caption,
-      color: colors.textTertiary,
-      paddingHorizontal: spacing.md,
-      paddingBottom: spacing.md,
+      color: colors.textSecondary,
+      lineHeight: 18,
     },
     aboutText: {
       ...typography.body,

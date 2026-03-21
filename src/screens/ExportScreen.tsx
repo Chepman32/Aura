@@ -79,7 +79,7 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
   const theme = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const colors = theme.colors;
-  const { videoUri, filterId, intensity } = route.params;
+  const { videoUri, filterId, intensity, exportFormat } = route.params;
 
   // ── Store ────────────────────────────────────────────────────────────────
   const setProgress = useExportStore((s) => s.setProgress);
@@ -173,6 +173,7 @@ export default function ExportScreen({ route, navigation }: Props): React.JSX.El
           filter.id,
           filter.colorMatrix,
           intensity,
+          exportFormat,
           (progressValue: number) => {
             if (cancelled || !isMountedRef.current) {
               return;

@@ -23,6 +23,7 @@ RCT_EXTERN_METHOD(
   filterId:(NSString *)filterId
   filterMatrixPayload:(NSString *)filterMatrixPayload
   filterIntensity:(nonnull NSNumber *)filterIntensity
+  exportFormat:(NSString *)exportFormat
   resolve:(RCTPromiseResolveBlock)resolve
   reject:(RCTPromiseRejectBlock)reject
 )

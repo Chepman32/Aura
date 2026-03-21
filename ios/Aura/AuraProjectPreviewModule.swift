@@ -76,12 +76,13 @@ final class AuraVideoExporter: RCTEventEmitter {
     hasListeners = false
   }
 
-  @objc(exportVideo:filterId:filterMatrixPayload:filterIntensity:resolve:reject:)
+  @objc(exportVideo:filterId:filterMatrixPayload:filterIntensity:exportFormat:resolve:reject:)
   func exportVideo(
     _ sourceUri: String,
     filterId: String,
     filterMatrixPayload: String,
     filterIntensity: NSNumber,
+    exportFormat: String,
     resolve: @escaping RCTPromiseResolveBlock,
     reject: @escaping RCTPromiseRejectBlock
   ) {
@@ -97,7 +98,8 @@ final class AuraVideoExporter: RCTEventEmitter {
           sourceUri: sourceUri,
           filterId: filterId,
           filterMatrixPayload: filterMatrixPayload,
-          filterIntensity: CGFloat(truncating: filterIntensity)
+          filterIntensity: CGFloat(truncating: filterIntensity),
+          exportFormat: exportFormat
         )
 
         try self.registerActiveExport(session: configuredExport.session)

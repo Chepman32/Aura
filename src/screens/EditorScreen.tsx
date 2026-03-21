@@ -14,6 +14,7 @@ import { runOnJS } from 'react-native-reanimated';
 import type { RootStackParamList } from '../app/navigation/types';
 import { useEditorStore } from '../store/useEditorStore';
 import { useProjectStore } from '../store/useProjectStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 import VideoViewport from '../components/editor/VideoViewport';
 import AuraRibbon from '../components/editor/AuraRibbon';
 import IntensitySlider from '../components/editor/IntensitySlider';
@@ -58,6 +59,7 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
   const duration = useEditorStore((s) => s.duration);
   const requestSeek = useEditorStore((s) => s.requestSeek);
   const reset = useEditorStore((s) => s.reset);
+  const exportFormat = useSettingsStore((state) => state.exportFormat);
 
   const [sliderVisible, setSliderVisible] = useState(false);
   const [timelineWidth, setTimelineWidth] = useState(0);
@@ -178,8 +180,9 @@ export default function EditorScreen({ route, navigation }: Props): React.JSX.El
       videoUri: project.sourceVideoUri,
       filterId: activeFilterId,
       intensity: filterIntensity,
+      exportFormat,
     });
-  }, [activeFilterId, filterIntensity, navigation, project]);
+  }, [activeFilterId, exportFormat, filterIntensity, navigation, project]);
 
   // Timeline progress ratio
   const progressRatio = duration > 0 ? currentTime / duration : 0;
