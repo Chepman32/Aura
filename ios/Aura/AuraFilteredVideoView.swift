@@ -276,6 +276,8 @@ final class AuraFilteredVideoView: UIView {
       return applyNoirFilter(to: image, intensity: intensity)
     case "vhs":
       return applyVHSFilter(to: image, intensity: intensity, time: time)
+    case "arctic":
+      return applyArcticFilter(to: image, intensity: intensity, time: time)
     default:
       return applyColorMatrixFilter(to: image, matrix: matrix, intensity: intensity)
     }
@@ -690,6 +692,147 @@ final class AuraFilteredVideoView: UIView {
     .cropped(to: image.extent)
 
     return blendFilteredImage(image, with: vintageImage, intensity: clampedIntensity)
+  }
+
+  private func applyArcticFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
+    let clampedIntensity = max(0, min(intensity, 1))
+    let extent = image.extent
+
+    let coldBase = image
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0.70 - clampedIntensity * 0.22,
+        kCIInputContrastKey: 1.02 + clampedIntensity * 0.14,
+        kCIInputBrightnessKey: 0.02 + clampedIntensity * 0.03,
+      ])
+      .applyingFilter("CITemperatureAndTint", parameters: [
+        "inputNeutral": CIVector(x: 6500, y: 0),
+        "inputTargetNeutral": CIVector(x: 9800 + clampedIntensity * 1200, y: -22),
+      ])
+      .applyingFilter("CIHighlightShadowAdjust", parameters: [
+        "inputShadowAmount": 0.35 + clampedIntensity * 0.20,
+        "inputHighlightAmount": 0.96,
+      ])
+      .cropped(to: extent)
+
+    guard let randomNoise = CIFilter(name: "CIRandomGenerator")?.outputImage else {
+      return blendFilteredImage(image, with: coldBase, intensity: clampedIntensity)
+    }
+
+    let driftX = CGFloat(fmod(time * 6.0, 512))
+    let driftY = CGFloat(fmod(time * 3.8, 512))
+
+    let baseNoise = randomNoise
+      .transformed(by: CGAffineTransform(translationX: driftX, y: driftY))
+      .cropped(to: extent)
+
+    let secondaryNoise = randomNoise
+      .transformed(
+        by: CGAffineTransform(scaleX: 1.35, y: 1.35)
+          .translatedBy(x: -driftX * 0.55, y: driftY * 0.42)
+      )
+      .cropped(to: extent)
+
+    let crystallineBranches = baseNoise
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.38,
+        kCIInputContrastKey: 8.5 + clampedIntensity * 4.0,
+      ])
+      .applyingFilter("CIMotionBlur", parameters: [
+        kCIInputRadiusKey: 24.0 + clampedIntensity * 18.0,
+        kCIInputAngleKey: Double.pi / 6,
+      ])
+      .applyingFilter("CIMotionBlur", parameters: [
+        kCIInputRadiusKey: 10.0 + clampedIntensity * 8.0,
+        kCIInputAngleKey: -Double.pi / 3.2,
+      ])
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.08,
+        kCIInputContrastKey: 3.8,
+      ])
+
+    let featheredCrystals = secondaryNoise
+      .applyingFilter("CICrystallize", parameters: [
+        kCIInputRadiusKey: 5.0 + clampedIntensity * 4.0,
+        kCIInputCenterKey: CIVector(x: extent.midX, y: extent.midY),
+      ])
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.18,
+        kCIInputContrastKey: 2.6 + clampedIntensity * 1.4,
+      ])
+      .applyingFilter("CIGaussianBlur", parameters: [
+        kCIInputRadiusKey: 0.8 + clampedIntensity * 0.8,
+      ])
+      .cropped(to: extent)
+
+    let fineNeedles = secondaryNoise
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.42,
+        kCIInputContrastKey: 10.0 + clampedIntensity * 4.0,
+      ])
+      .applyingFilter("CIMotionBlur", parameters: [
+        kCIInputRadiusKey: 14.0 + clampedIntensity * 10.0,
+        kCIInputAngleKey: Double.pi / 2.7,
+      ])
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.10,
+        kCIInputContrastKey: 4.2,
+      ])
+
+    let coverageMask = crystallineBranches
+      .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: featheredCrystals])
+      .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: fineNeedles])
+      .applyingFilter("CIGaussianBlur", parameters: [
+        kCIInputRadiusKey: 1.6 + clampedIntensity * 1.2,
+      ])
+      .applyingFilter("CIColorControls", parameters: [
+        kCIInputSaturationKey: 0,
+        kCIInputBrightnessKey: -0.02,
+        kCIInputContrastKey: 2.0 + clampedIntensity * 0.8,
+      ])
+      .cropped(to: extent)
+
+    let blurredBase = coldBase
+      .clampedToExtent()
+      .applyingFilter("CIGaussianBlur", parameters: [
+        kCIInputRadiusKey: 8.0 + clampedIntensity * 8.0,
+      ])
+      .cropped(to: extent)
+
+    let frostedGlass = blurredBase
+      .applyingFilter("CIBlendWithMask", parameters: [
+        kCIInputBackgroundImageKey: coldBase,
+        kCIInputMaskImageKey: coverageMask,
+      ])
+      .cropped(to: extent)
+
+    let icyRidges = coverageMask
+      .applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 0.86, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 0, y: 0.92, z: 0, w: 0),
+        "inputBVector": CIVector(x: 0, y: 0, z: 1.0, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.22 + clampedIntensity * 0.18),
+        "inputBiasVector": CIVector(x: 0.16, y: 0.20, z: 0.24, w: 0),
+      ])
+      .cropped(to: extent)
+
+    let arcticImage = icyRidges
+      .applyingFilter("CIScreenBlendMode", parameters: [kCIInputBackgroundImageKey: frostedGlass])
+      .applyingFilter("CIBloom", parameters: [
+        kCIInputRadiusKey: 1.2 + clampedIntensity * 1.0,
+        kCIInputIntensityKey: 0.12 + clampedIntensity * 0.10,
+      ])
+      .applyingFilter("CIVignette", parameters: [
+        kCIInputIntensityKey: 0.22 + clampedIntensity * 0.20,
+        kCIInputRadiusKey: 1.55,
+      ])
+      .cropped(to: extent)
+
+    return blendFilteredImage(image, with: arcticImage, intensity: clampedIntensity)
   }
 
   private func applyVHSFilter(to image: CIImage, intensity: CGFloat, time: Double) -> CIImage {
