@@ -1,5 +1,4 @@
 export type RootStackParamList = {
-  DesignCode: undefined;
   Splash: undefined;
   Home: undefined;
   Editor: { projectId: string };

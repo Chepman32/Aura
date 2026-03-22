@@ -6,9 +6,10 @@ import {
   View,
 } from 'react-native';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
@@ -23,7 +24,6 @@ import AnimatedPressable from '../components/shared/AnimatedPressable';
 import {
   APP_THEMES,
   APP_THEME_OPTIONS,
-  SPRING_GENTLE,
   spacing,
   typography,
   useAppTheme,
@@ -56,33 +56,37 @@ const EXPORT_FORMAT_COPY: Record<ExportFormatId, string> = {
   hevc: 'Higher-efficiency video in a .mov container.',
 };
 
+const ACCORDION_CONTENT_HEIGHT = 520;
+const ACCORDION_TIMING = {
+  duration: 220,
+  easing: Easing.out(Easing.cubic),
+};
+
 function Accordion({ title, children }: AccordionProps) {
   const theme = useAppTheme();
   const styles = useThemedStyles(createStyles);
   const [expanded, setExpanded] = useState(false);
-  const height = useSharedValue(0);
-  const rotation = useSharedValue(0);
+  const progress = useSharedValue(0);
 
   const toggle = useCallback(() => {
     const next = !expanded;
     setExpanded(next);
-    height.value = withSpring(next ? 1 : 0, SPRING_GENTLE);
-    rotation.value = withSpring(next ? 180 : 0, SPRING_GENTLE);
-  }, [expanded, height, rotation]);
+    progress.value = withTiming(next ? 1 : 0, ACCORDION_TIMING);
+  }, [expanded, progress]);
 
   const contentStyle = useAnimatedStyle(() => ({
-    maxHeight: height.value * 520,
-    opacity: height.value,
+    maxHeight: progress.value * ACCORDION_CONTENT_HEIGHT,
+    opacity: progress.value,
     overflow: 'hidden' as const,
   }));
 
   const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
+    transform: [{ rotate: `${progress.value * 180}deg` }],
   }));
 
   return (
     <View style={styles.accordionContainer}>
-      <AnimatedPressable onPress={toggle} style={styles.accordionHeader}>
+      <AnimatedPressable onPress={toggle} style={styles.accordionHeader} pressedScale={1}>
         <Text style={styles.accordionTitle}>{title}</Text>
         <Animated.View style={chevronStyle}>
           <ChevronDown size={20} color={theme.colors.textSecondary} />
