@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  FlatList,
   Platform,
   Text,
   type ViewProps,
@@ -16,7 +15,16 @@ import {
 } from 'lucide-react-native';
 import { MenuView } from '@react-native-menu/menu';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS, useAnimatedReaction } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  FadeOutUp,
+  LinearTransition,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { HEADER_CONTENT_HEIGHT } from './BlurHeader';
 import ProjectCard from './ProjectCard';
 import {
@@ -32,6 +40,8 @@ import { useHaptics } from '../../hooks/useHaptics';
 import type { Folder, Project } from '../../store/useProjectStore';
 import AnimatedPressable from '../shared/AnimatedPressable';
 import {
+  SPRING_BOUNCY,
+  SPRING_STIFF,
   spacing,
   typography,
   useAppTheme,
@@ -59,6 +69,26 @@ interface ProjectDashboardListProps {
 }
 
 const LONG_PRESS_INTENT_THRESHOLD_MS = 400;
+const SECTION_LAYOUT_TRANSITION = LinearTransition.springify()
+  .damping(SPRING_STIFF.damping ?? 20)
+  .stiffness(SPRING_STIFF.stiffness ?? 300)
+  .mass(0.85);
+const SECTION_ITEM_ENTERING = FadeInDown.springify()
+  .damping(SPRING_BOUNCY.damping ?? 12)
+  .stiffness(220)
+  .mass(SPRING_BOUNCY.mass ?? 0.5)
+  .withInitialValues({
+    opacity: 0,
+    transform: [{ translateY: -14 }, { scale: 0.985 }],
+  });
+const SECTION_ITEM_EXITING = FadeOutUp.springify()
+  .damping(18)
+  .stiffness(240)
+  .mass(0.7)
+  .withInitialValues({
+    opacity: 1,
+    transform: [{ translateY: 0 }, { scale: 1 }],
+  });
 
 type InteractiveMenuViewProps = React.ComponentProps<typeof MenuView> &
   Pick<ViewProps, 'onTouchStart' | 'onTouchEnd' | 'onTouchCancel'>;
@@ -75,6 +105,33 @@ function icon(name: {
     android: name.android,
     default: name.ios,
   }) as string;
+}
+
+function SectionChevron({
+  expanded,
+  color,
+}: {
+  expanded: boolean;
+  color: string;
+}): React.JSX.Element {
+  const rotation = useSharedValue(expanded ? 1 : 0);
+
+  React.useEffect(() => {
+    rotation.value = withSpring(expanded ? 1 : 0, SPRING_BOUNCY);
+  }, [expanded, rotation]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: `${rotation.value * 180}deg` },
+      { scale: 0.96 + rotation.value * 0.04 },
+    ],
+  }));
+
+  return (
+    <Animated.View style={chevronStyle}>
+      <ChevronDown size={18} color={color} />
+    </Animated.View>
+  );
 }
 
 export default function ProjectDashboardList({
@@ -183,7 +240,6 @@ export default function ProjectDashboardList({
   const renderSectionHeader = useCallback(
     (section: ProjectSection): React.JSX.Element => {
       const countLabel = `${section.projects.length}`;
-      const chevronRotation = section.expanded ? '180deg' : '0deg';
       const isTrash = section.id === TRASH_SECTION_ID;
       const isAllProjects = section.id === ALL_PROJECTS_SECTION_ID;
 
@@ -202,11 +258,7 @@ export default function ProjectDashboardList({
               <Text style={styles.countText}>{countLabel}</Text>
             </View>
           </View>
-          <ChevronDown
-            size={18}
-            color={colors.textSecondary}
-            style={{ transform: [{ rotate: chevronRotation }] }}
-          />
+          <SectionChevron expanded={section.expanded} color={colors.textSecondary} />
         </View>
       );
 
@@ -291,7 +343,12 @@ export default function ProjectDashboardList({
 
   const renderRow = useCallback(
     (section: ProjectSection, rowProjects: Project[]): React.JSX.Element => (
-      <View style={styles.projectRow}>
+      <Animated.View
+        layout={SECTION_LAYOUT_TRANSITION}
+        entering={SECTION_ITEM_ENTERING}
+        exiting={SECTION_ITEM_EXITING}
+        style={styles.projectRow}
+      >
         {rowProjects.map((project) => {
           const isTrash = project.status === 'trash';
           const moveTargets = regularFolderActions.filter(
@@ -376,7 +433,7 @@ export default function ProjectDashboardList({
             </InteractiveMenuView>
           );
         })}
-      </View>
+      </Animated.View>
     ),
     [
       columnCount,
@@ -399,10 +456,11 @@ export default function ProjectDashboardList({
   return (
     <View style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
-        <FlatList
+        <Animated.FlatList
           key={`projects-${columnCount}`}
           data={items}
           keyExtractor={(item) => item.id}
+          itemLayoutAnimation={SECTION_LAYOUT_TRANSITION}
           contentContainerStyle={[
             styles.listContent,
             {
@@ -417,13 +475,18 @@ export default function ProjectDashboardList({
 
             if (item.type === 'empty') {
               return (
-                <View style={styles.emptyState}>
+                <Animated.View
+                  layout={SECTION_LAYOUT_TRANSITION}
+                  entering={SECTION_ITEM_ENTERING}
+                  exiting={SECTION_ITEM_EXITING}
+                  style={styles.emptyState}
+                >
                   <Text style={styles.emptyStateText}>
                     {item.section.kind === 'trash'
                       ? 'Trash is empty.'
                       : 'No projects here yet.'}
                   </Text>
-                </View>
+                </Animated.View>
               );
             }
 
