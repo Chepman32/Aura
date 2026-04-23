@@ -1,7 +1,16 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { generateProjectPreview, cleanupProjectPreview } from '../services/projectPreview';
+import {
+  generateProjectPreview,
+  cleanupProjectPreview,
+} from '../services/projectPreview';
 import { createFileStorage } from './fileStorage';
+import {
+  fileUriExists,
+  looksLikeGeneratedProjectPreviewUri,
+  restoreProjectStateFromPersistence,
+  serializeProjectStateForPersistence,
+} from './projectPersistence';
 
 export type ProjectStatus = 'active' | 'trash';
 
@@ -90,6 +99,7 @@ const INITIAL_STATE: ProjectState = {
   projects: [],
   trashActivated: false,
 };
+const PROJECT_STORE_VERSION = 1;
 
 function createId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -116,6 +126,89 @@ function makeCopyName(name: string): string {
 
 function clampPreviewTime(timeMs: number): number {
   return Number.isFinite(timeMs) ? Math.max(0, Math.round(timeMs)) : 0;
+}
+
+interface ProjectPreviewRepair {
+  id: string;
+  sourceVideoUri: string;
+  filterId: string;
+  filterIntensity: number;
+  previewTimeMs: number;
+  previewUri: string;
+}
+
+async function repairHydratedProjectPreviews(
+  state: ProjectState & ProjectActions,
+): Promise<void> {
+  if (!state.projects.length) {
+    return;
+  }
+
+  const repairs = (
+    await Promise.all(
+      state.projects.map(
+        async (project): Promise<ProjectPreviewRepair | null> => {
+          if (!looksLikeGeneratedProjectPreviewUri(project.previewUri)) {
+            return null;
+          }
+
+          if (await fileUriExists(project.previewUri)) {
+            return null;
+          }
+
+          const previewUri = await generateProjectPreview({
+            projectId: project.id,
+            sourceVideoUri: project.sourceVideoUri,
+            filterId: project.filterId,
+            filterIntensity: project.filterIntensity,
+            timeMs: clampPreviewTime(project.previewTimeMs),
+          });
+
+          if (previewUri === project.previewUri) {
+            return null;
+          }
+
+          return {
+            id: project.id,
+            sourceVideoUri: project.sourceVideoUri,
+            filterId: project.filterId,
+            filterIntensity: project.filterIntensity,
+            previewTimeMs: project.previewTimeMs,
+            previewUri,
+          };
+        },
+      ),
+    )
+  ).filter((repair): repair is ProjectPreviewRepair => repair !== null);
+
+  if (!repairs.length) {
+    return;
+  }
+
+  repairs.forEach(repair => {
+    const currentProject = useProjectStore
+      .getState()
+      .projects.find(project => project.id === repair.id);
+
+    const snapshotMatches =
+      currentProject?.sourceVideoUri === repair.sourceVideoUri &&
+      currentProject?.filterId === repair.filterId &&
+      currentProject?.filterIntensity === repair.filterIntensity &&
+      currentProject?.previewTimeMs === repair.previewTimeMs;
+
+    if (!currentProject || !snapshotMatches) {
+      return;
+    }
+
+    if (currentProject.previewUri === repair.previewUri) {
+      return;
+    }
+
+    useProjectStore.getState().updateProjectPreview(repair.id, {
+      previewUri: repair.previewUri,
+      previewTimeMs: repair.previewTimeMs,
+    });
+  });
 }
 
 export const useProjectStore = create<ProjectState & ProjectActions>()(
@@ -146,11 +239,13 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           updatedAt: timestamp,
         };
 
-        set((state) => ({
+        set(state => ({
           projects: [project, ...state.projects],
         }));
 
-        get().refreshProjectPreview(project.id, { timeMs: 0 }).catch(() => {});
+        get()
+          .refreshProjectPreview(project.id, { timeMs: 0 })
+          .catch(() => {});
         return project;
       },
 
@@ -160,8 +255,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           return;
         }
 
-        set((state) => ({
-          projects: state.projects.map((project) =>
+        set(state => ({
+          projects: state.projects.map(project =>
             project.id === projectId
               ? { ...project, name: trimmedName, updatedAt: Date.now() }
               : project,
@@ -169,8 +264,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }));
       },
 
-      duplicateProject: (projectId) => {
-        const project = get().projects.find((item) => item.id === projectId);
+      duplicateProject: projectId => {
+        const project = get().projects.find(item => item.id === projectId);
         if (!project || project.status !== 'active') {
           return null;
         }
@@ -185,7 +280,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           updatedAt: timestamp,
         };
 
-        set((state) => ({
+        set(state => ({
           projects: [duplicate, ...state.projects],
         }));
 
@@ -201,8 +296,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
 
       moveProjectToFolder: (projectId, folderId) => {
-        set((state) => ({
-          projects: state.projects.map((project) => {
+        set(state => ({
+          projects: state.projects.map(project => {
             if (project.id !== projectId || project.status !== 'active') {
               return project;
             }
@@ -216,10 +311,10 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }));
       },
 
-      removeProject: (projectId) => {
-        set((state) => ({
+      removeProject: projectId => {
+        set(state => ({
           trashActivated: true,
-          projects: state.projects.map((project) => {
+          projects: state.projects.map(project => {
             if (project.id !== projectId || project.status === 'trash') {
               return project;
             }
@@ -235,15 +330,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }));
       },
 
-      recoverProject: (projectId) => {
-        set((state) => ({
-          projects: state.projects.map((project) => {
+      recoverProject: projectId => {
+        set(state => ({
+          projects: state.projects.map(project => {
             if (project.id !== projectId || project.status !== 'trash') {
               return project;
             }
 
-            const folderExists = !!project.previousFolderId &&
-              state.folders.some((folder) => folder.id === project.previousFolderId);
+            const folderExists =
+              !!project.previousFolderId &&
+              state.folders.some(
+                folder => folder.id === project.previousFolderId,
+              );
 
             return {
               ...project,
@@ -256,18 +354,18 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
         }));
       },
 
-      removeProjectPermanently: (projectId) => {
-        const project = get().projects.find((item) => item.id === projectId);
-        set((state) => ({
-          projects: state.projects.filter((item) => item.id !== projectId),
+      removeProjectPermanently: projectId => {
+        const project = get().projects.find(item => item.id === projectId);
+        set(state => ({
+          projects: state.projects.filter(item => item.id !== projectId),
         }));
 
         cleanupProjectPreview(project?.previewUri).catch(() => {});
       },
 
       updateProjectSession: (projectId, update) => {
-        set((state) => ({
-          projects: state.projects.map((project) => {
+        set(state => ({
+          projects: state.projects.map(project => {
             if (project.id !== projectId) {
               return project;
             }
@@ -275,7 +373,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             return {
               ...project,
               filterId: update.filterId ?? project.filterId,
-              filterIntensity: update.filterIntensity ?? project.filterIntensity,
+              filterIntensity:
+                update.filterIntensity ?? project.filterIntensity,
               previewTimeMs:
                 update.previewTimeMs === undefined
                   ? project.previewTimeMs
@@ -287,9 +386,11 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
 
       updateProjectPreview: (projectId, update) => {
-        const currentProject = get().projects.find((item) => item.id === projectId);
-        set((state) => ({
-          projects: state.projects.map((project) => {
+        const currentProject = get().projects.find(
+          item => item.id === projectId,
+        );
+        set(state => ({
+          projects: state.projects.map(project => {
             if (project.id !== projectId) {
               return project;
             }
@@ -315,7 +416,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
       },
 
       refreshProjectPreview: async (projectId, options) => {
-        const project = get().projects.find((item) => item.id === projectId);
+        const project = get().projects.find(item => item.id === projectId);
         if (!project) {
           return;
         }
@@ -325,9 +426,11 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
             ? project.previewTimeMs
             : options.timeMs,
         );
-        const sourceVideoUri = options?.sourceVideoUri ?? project.sourceVideoUri;
+        const sourceVideoUri =
+          options?.sourceVideoUri ?? project.sourceVideoUri;
         const filterId = options?.filterId ?? project.filterId;
-        const filterIntensity = options?.filterIntensity ?? project.filterIntensity;
+        const filterIntensity =
+          options?.filterIntensity ?? project.filterIntensity;
 
         const previewUri = await generateProjectPreview({
           projectId: project.id,
@@ -351,7 +454,7 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           createdAt: Date.now(),
         };
 
-        set((state) => ({
+        set(state => ({
           folders: [...state.folders, folder],
         }));
 
@@ -364,17 +467,17 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
           return;
         }
 
-        set((state) => ({
-          folders: state.folders.map((folder) =>
+        set(state => ({
+          folders: state.folders.map(folder =>
             folder.id === folderId ? { ...folder, name: trimmedName } : folder,
           ),
         }));
       },
 
-      removeFolder: (folderId) => {
-        set((state) => ({
-          folders: state.folders.filter((folder) => folder.id !== folderId),
-          projects: state.projects.map((project) => ({
+      removeFolder: folderId => {
+        set(state => ({
+          folders: state.folders.filter(folder => folder.id !== folderId),
+          projects: state.projects.map(project => ({
             ...project,
             folderId: project.folderId === folderId ? null : project.folderId,
             previousFolderId:
@@ -387,14 +490,16 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
 
       cleanTrash: () => {
         const trashedProjects = get().projects.filter(
-          (project) => project.status === 'trash',
+          project => project.status === 'trash',
         );
 
-        set((state) => ({
-          projects: state.projects.filter((project) => project.status !== 'trash'),
+        set(state => ({
+          projects: state.projects.filter(
+            project => project.status !== 'trash',
+          ),
         }));
 
-        trashedProjects.forEach((project) => {
+        trashedProjects.forEach(project => {
           cleanupProjectPreview(project.previewUri).catch(() => {});
         });
       },
@@ -403,7 +508,31 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
     }),
     {
       name: 'aura-projects',
+      version: PROJECT_STORE_VERSION,
       storage: createJSONStorage(() => createFileStorage()),
+      partialize: state =>
+        serializeProjectStateForPersistence({
+          folders: state.folders,
+          projects: state.projects,
+          trashActivated: state.trashActivated,
+        }),
+      migrate: persistedState =>
+        restoreProjectStateFromPersistence(
+          persistedState as Partial<ProjectState> | undefined,
+        ),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...restoreProjectStateFromPersistence(
+          persistedState as Partial<ProjectState> | undefined,
+        ),
+      }),
+      onRehydrateStorage: () => (_state, error) => {
+        if (error || !_state) {
+          return;
+        }
+
+        void repairHydratedProjectPreviews(_state);
+      },
     },
   ),
 );
